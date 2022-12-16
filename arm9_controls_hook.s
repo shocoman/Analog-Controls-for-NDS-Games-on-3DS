@@ -31,19 +31,20 @@ LoadValueFromStick:
 
     @ Get ZL & ZR button values
     ldr r7, RTC_Date
-    ldr r0, [r7, #4]    @ ZLZR (ZL=3rd bit, ZR=2nd bit), NubY, NubX, _
+    ldr r0, [r7, #4]    @ ZLZR (ZL=3rd bit, ZR=2nd bit), _, _, _
 
     @ Get ZLZR
     mov r3, r0, lsl #29
     mov r3, r3, lsr #30
 
-    @ Apply nub to turn the camera
-    mov r1, r0, lsl #8
-    mov r1, r1, asr #24 @ Sign extend X
-    cmp r1, #0x18
-    orrgt r3, #1
-    cmp r1, #-0x18
-    orrlt r3, #2
+    @@@ Done on Arm11's side
+    @@ Apply nub to turn the camera
+    @ mov r1, r0, lsl #8
+    @ mov r1, r1, asr #24 @ Sign extend X
+    @ cmp r1, #0x18
+    @ orrgt r3, #1
+    @ cmp r1, #-0x18
+    @ orrlt r3, #2
 
     @ Save the camera turning buttons 
     mov r3, r3, lsl #8

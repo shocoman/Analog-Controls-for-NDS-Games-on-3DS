@@ -23,6 +23,7 @@
 #define RTC_WRITE_113 0x6E
 
 __attribute__((section(".text"))) static int RTCOM_STATE = 0;
+__attribute__((section(".text"))) static int FRAME_COUNTER = 0;
 
 static void waitByLoop(volatile int count) {
     while (--count) {
@@ -240,36 +241,31 @@ void Init_CPad_and_Stuff() {
     leaveCriticalSection(savedIrq);
 }
 
-void Update_CPad() {
-    // Read CpadX, CPadY
+inline void Update_CPad() {
     if (!rtcom_executeUCode(1))
         return;
     u8 cpad_x = rtcom_getData();
+
     if (!rtcom_requestNext(2))
         return;
     u8 cpad_y = rtcom_getData();
+    u16 cpad_xy = cpad_x | (cpad_y << 8);
 
-    *(vu32 *)0x02FFFE70 = cpad_x | (cpad_y << 8);
-    *(vu16 *)0x027ffde8 = cpad_x | (cpad_y << 8);
+    *(vu16 *)0x02FFFE70 = cpad_xy;
+    *(vu16 *)0x027ffde8 = cpad_xy;
+}
 
-    // read Zlzr, NubX, NubY
-    u32 new3ds_stuff = 0;
+inline void Update_NubZLZR() {
+    u32 zlzr = 0;
 
 #ifdef INCLUDE_NEW_3DS_STUFF
     if (!rtcom_requestNext(3))
         return;
-    u8 zlzr = rtcom_getData();
-    if (!rtcom_requestNext(4))
-        return;
-    u8 nub_x = rtcom_getData();
-    if (!rtcom_requestNext(5))
-        return;
-    u8 nub_y = rtcom_getData();
-    new3ds_stuff = zlzr | (nub_x << 8) | (nub_y << 16);
+    zlzr = rtcom_getData();
 #endif
 
-    *(vu32 *)0x02FFFE74 = new3ds_stuff;
-    *(vu32 *)0x027ffdec = new3ds_stuff;
+    *(vu32 *)0x02FFFE74 = zlzr;
+    *(vu32 *)0x027ffdec = zlzr;
 }
 
 void Update_RTCom() {
@@ -282,15 +278,24 @@ void Update_RTCom() {
         Init_CPad_and_Stuff();
         RTCOM_STATE = 200;
     } else if (RTCOM_STATE == 105) {
-        int savedIrq = enterCriticalSection();
-        {
-            u16 old_rcnt = rtcom_beginComm();
-            Update_CPad();
-            rtcom_requestKill();
-            rtcom_requestAsync(RTCOM_STAT_DONE);
-            rtcom_endComm(old_rcnt);
+        FRAME_COUNTER += 1;
+
+        if (FRAME_COUNTER % 2 == 0) {
+            int savedIrq = enterCriticalSection();
+            {
+                u16 old_rcnt = rtcom_beginComm();
+                Update_CPad(); // once 2 frames
+
+                if (FRAME_COUNTER % 4 == 0) {
+                    Update_NubZLZR(); // once 4 frames
+                }
+
+                rtcom_requestKill();
+                rtcom_requestAsync(RTCOM_STAT_DONE);
+                rtcom_endComm(old_rcnt);
+            }
+            leaveCriticalSection(savedIrq);
         }
-        leaveCriticalSection(savedIrq);
     } else if (RTCOM_STATE > 0) {
         RTCOM_STATE -= 1;
     }
