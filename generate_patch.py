@@ -93,14 +93,20 @@ def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
     subprocess.check_output([make_exe_path, 'clean', '--directory', arm7_patch_dir])
 
     include_nub_param = 'EXTERNAL_FLAGS=' + ('-DINCLUDE_NEW_3DS_STUFF' if include_nub else '')
-    subprocess.check_output(
-        [make_exe_path, include_nub_param, '--directory', arm7_patch_dir],
-        stderr=subprocess.DEVNULL)
+    try:
+        subprocess.check_output([make_exe_path, include_nub_param, '--directory', arm7_patch_dir],
+                                stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        print(e.output.decode('utf-8'))
+        exit(-1)
 
-    subprocess.check_output(
-        [ld_exe_path, 'rtcom.o', f'{arm7_patch_dir}.uc11.o', '--output', 'arm7_patch.o', '--section-start',
-         f'.text={hex(rtc_code_block_start_addr)}'],
-        stderr=subprocess.DEVNULL, cwd=f'{arm7_patch_dir}/arm7/build/')
+    try:
+        subprocess.check_output([ld_exe_path, 'rtcom.o', f'{arm7_patch_dir}.uc11.o', '--output',
+                                 'arm7_patch.o', '--section-start', f'.text={hex(rtc_code_block_start_addr)}'],
+                                stderr=subprocess.DEVNULL, cwd=f'{arm7_patch_dir}/arm7/build/')
+    except subprocess.CalledProcessError as e:
+        print(e.output.decode('utf-8'))
+        exit(-1)
 
     subprocess.check_output(
         [objcopy_exe_path, '-O', 'binary', '--only-section=.rodata', '--only-section=.text', 'arm7_patch.o',

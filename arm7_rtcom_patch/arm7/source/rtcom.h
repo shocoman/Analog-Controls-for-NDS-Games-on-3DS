@@ -1,19 +1,21 @@
 #pragma once
 
+// Arm11 answers
 #define RTCOM_STAT_READY        0x00
 #define RTCOM_STAT_ACK          0x80
 #define RTCOM_STAT_DONE         0x82
 
+// Arm7 requests
 #define RTCOM_REQ_KIL           0x00
 #define RTCOM_REQ_UPLOAD_UCODE  0x41
 #define RTCOM_REQ_FINISH_UCODE  0x42
 #define RTCOM_REQ_EXECUTE_UCODE 0x44
 #define RTCOM_REQ_NEXT          0x81
+#define RTCOM_REQ_KEEPALIVE     0x83
+#define RTCOM_REQ_SYNC_KIL      0xFE
 
 u16 rtcom_beginComm();
 void rtcom_endComm(u16 old_reg_rcnt);
-
-int rtcom_test();
 
 u8 rtcom_getData();
 
@@ -32,13 +34,11 @@ static inline void rtcom_requestNextAsync(u8 param) { rtcom_requestAsync(RTCOM_R
 static inline bool rtcom_requestNext() { return rtcom_request(RTCOM_REQ_NEXT); }
 static inline bool rtcom_requestNext(u8 param) { return rtcom_request(RTCOM_REQ_NEXT, param); }
 
-#define rtcom_kill()                    rtcom_requestAsync(RTCOM_REQ_KIL)
-
+static inline void rtcom_requestKillAsync() { rtcom_requestAsync(RTCOM_REQ_KIL); }
 bool rtcom_requestKill();
 
 void rtcom_signalDone();
 
-u32 rtcom_getProcAddr(u32 id);
 bool rtcom_uploadUCode(const void* uCode, u32 length);
 bool rtcom_executeUCode(u8 param);
 

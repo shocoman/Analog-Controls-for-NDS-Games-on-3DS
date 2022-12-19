@@ -1,7 +1,9 @@
 #include <nds.h>
+#include <nds/arm7/serial.h>
 
 #include "arm7_rtcom_patch_uc11.h"
 #include "rtcom.h"
+#include "sys/_stdint.h"
 
 // Delay (in swiDelay units) for each bit transfer
 #define RTC_DELAY 48
@@ -22,8 +24,16 @@
 #define RTC_READ_113 0x6F
 #define RTC_WRITE_113 0x6E
 
-__attribute__((section(".text"))) static int RTCOM_STATE = 0;
+#define RTC_READ_HOUR_MINUTE_SECOND 0x67
+
+// sm64ds's arm7 usually stores RTC date&time here, should be a safe place as it's not used
+#define RTCOM_DATA_OUTPUT 0x027FFDE8
+
+// an attempt to put global variables next to the code for easier memory control;
+// be aware of the compiler error "unaligned opcodes detected in executable segment"
+__attribute__((section(".text"))) static int RTCOM_STATE_TIMER = 0;
 __attribute__((section(".text"))) static int FRAME_COUNTER = 0;
+__attribute__((section(".text"))) static bool WAS_LID_CLOSED_LAST_FRAME = 0;
 
 static void waitByLoop(volatile int count) {
     while (--count) {
@@ -158,16 +168,11 @@ bool rtcom_request(u8 request, u8 param) {
 }
 
 bool rtcom_requestKill() {
-    rtcom_requestAsync(0xFE);
+    rtcom_requestAsync(RTCOM_REQ_SYNC_KIL);
     return rtcom_waitReady();
 }
 
 void rtcom_signalDone() { writeReg113(RTCOM_STAT_DONE); }
-
-u32 rtcom_getProcAddr(u32 id) {
-    // todo
-    return 0;
-}
 
 bool rtcom_uploadUCode(const void *uCode, u32 length) {
     if (!rtcom_request(RTCOM_REQ_UPLOAD_UCODE, length & 0xFF))
@@ -187,6 +192,10 @@ bool rtcom_uploadUCode(const void *uCode, u32 length) {
         if (!rtcom_requestNext(*pCode++))
             return false;
 
+    // finish uploading
+    rtcom_requestAsync(RTCOM_REQ_KEEPALIVE);
+    rtcom_waitDone();
+
     // make it executable
     return rtcom_request(RTCOM_REQ_FINISH_UCODE);
 }
@@ -204,7 +213,7 @@ void Init_RTCom() {
         int trycount = 10;
 
         do {
-            rtcom_requestAsync(1);
+            rtcom_requestAsync(1); // request communication from rtcom
             if (rtcom_waitStatus(RTCOM_STAT_DONE)) {
                 break;
             }
@@ -219,14 +228,13 @@ void Init_RTCom() {
             } while (--trycount);
         }
 
-        rtcom_requestAsync(RTCOM_STAT_DONE);
         rtcom_endComm(old_crtc);
     }
 
     leaveCriticalSection(savedIrq);
 }
 
-void Init_CPad_and_Stuff() {
+void Init_CPad_and_Nub_and_ZlZr() {
 
     int savedIrq = enterCriticalSection();
     {
@@ -235,7 +243,6 @@ void Init_CPad_and_Stuff() {
         rtcom_executeUCode(0);
 
         rtcom_requestKill();
-        rtcom_requestAsync(RTCOM_STAT_DONE);
         rtcom_endComm(old_rcnt);
     }
     leaveCriticalSection(savedIrq);
@@ -251,8 +258,7 @@ inline void Update_CPad() {
     u8 cpad_y = rtcom_getData();
     u16 cpad_xy = cpad_x | (cpad_y << 8);
 
-    *(vu16 *)0x02FFFE70 = cpad_xy;
-    *(vu16 *)0x027ffde8 = cpad_xy;
+    *(vu16 *)RTCOM_DATA_OUTPUT = cpad_xy;
 }
 
 inline void Update_NubZLZR() {
@@ -264,20 +270,43 @@ inline void Update_NubZLZR() {
     zlzr = rtcom_getData();
 #endif
 
-    *(vu32 *)0x02FFFE74 = zlzr;
-    *(vu32 *)0x027ffdec = zlzr;
+    *(vu32 *)(RTCOM_DATA_OUTPUT + 4) = zlzr;
 }
 
 void Update_RTCom() {
-    if (RTCOM_STATE == 0) {
-        RTCOM_STATE = -1;
+    // Steps: Wait; Upload the code to Arm11;
+    //        Wait; Init CPad and Nub stuff;
+    //        Wait; Start pulling the Cpad and Nub data;
+    enum RtcomStateTime {
+        Start = 0,
+        UploadCode = 5,
+        InitCPad = UploadCode + 200,
+        ReadyToRead = InitCPad + 200,
+    };
+
+    // don't communicate via RTCom while the lid is closed
+    // reupload the code when it'll be opened
+    bool is_lid_closed_now = (REG_KEYXY >> 7) & 1; // 7th bit - lid is opened/closed
+    if (is_lid_closed_now) {
+        WAS_LID_CLOSED_LAST_FRAME = true;
+        return;
+    } else if (WAS_LID_CLOSED_LAST_FRAME) {
+        RTCOM_STATE_TIMER = Start; // start anew
+        WAS_LID_CLOSED_LAST_FRAME = false;
+    }
+
+    // execute certain rtcom state depending on the timer value
+    switch (RTCOM_STATE_TIMER) {
+    case UploadCode:
         Init_RTCom();
-        RTCOM_STATE = 100;
-    } else if (RTCOM_STATE == 5) {
-        RTCOM_STATE = -1;
-        Init_CPad_and_Stuff();
-        RTCOM_STATE = 200;
-    } else if (RTCOM_STATE == 105) {
+        RTCOM_STATE_TIMER += 1;
+        break;
+    case InitCPad:
+        Init_CPad_and_Nub_and_ZlZr();
+        RTCOM_STATE_TIMER += 1;
+        break;
+    case ReadyToRead:
+        // pretend that RTCom has been successfully initialized by this moment
         FRAME_COUNTER += 1;
 
         if (FRAME_COUNTER % 2 == 0) {
@@ -291,12 +320,13 @@ void Update_RTCom() {
                 }
 
                 rtcom_requestKill();
-                rtcom_requestAsync(RTCOM_STAT_DONE);
                 rtcom_endComm(old_rcnt);
             }
             leaveCriticalSection(savedIrq);
         }
-    } else if (RTCOM_STATE > 0) {
-        RTCOM_STATE -= 1;
+        break;
+    default:
+        RTCOM_STATE_TIMER += 1;
+        break;
     }
 }
