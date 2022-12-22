@@ -86,3 +86,4 @@ build/
 .mypy_cache/
 .vscode/
 tmp_ndstools/
+*.bin
