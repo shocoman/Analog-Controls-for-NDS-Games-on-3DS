@@ -181,10 +181,9 @@ void patch_twlbg_1_write_patch_body(u8 *cpad_xy_addr, I2C_Read_Func i2c_read) {
     *(u32 *)(main_patch_start + patch_code_size - 8) = (u32)cpad_xy_addr;
     *(u32 *)(main_patch_start + patch_code_size - 4) = (u32)i2c_read | 1;
 
+    // for now, skip the area we're going to insert the branch into
     rtc_area_start_addr = (rtc_func_addr - 10);
     u32 rtc_area_end_addr = rtc_area_start_addr + 0xDC;
-
-    // for now, skip the area we're going to insert the branch into
     *(vu16 *)rtc_area_start_addr = ((rtc_area_end_addr - rtc_area_start_addr - 4) >> 1) | 0xE000;
 }
 
@@ -199,7 +198,7 @@ void patch_twlbg_2_insert_branch_instruction() {
     u16 branch_instr_1 = 0xF000 | ((jump_offset >> 12) & 0x7FF);
     u16 branch_instr_2 = 0xF800 | ((jump_offset >> 1) & 0x7FF);
 
-    // insert the branch instruction to jump into the patched code
+    // branch instruction to jump into the copied in "patch_twlbg_1_write_patch_body()" code
     *(vu16 *)branch_base_address = branch_instr_1;
     *(vu16 *)(branch_base_address + 2) = branch_instr_2;
 }

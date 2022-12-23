@@ -37,13 +37,14 @@ ndstool_params = [
 ]
 
 arm9_rom_function_offsets = {
-    # Address to insert branch for controls hook; ipc_sendmsg func; sqrt func; getangle func; controls struct address
-    "ASMP-D3D9F14A": [0x202C408, 0x0205b988, 0x0203d744, 0x0203b4dc, 0x0209f498],
-    "ASMJ-D2BBD1E6": [0x202B5E4, 0x0205a6d4, 0x0203c4d0, 0x0203a26c, 0x0209803c],
-    "ASMJ-D2F380B2": [0x202B5AC, 0x02059f10, 0x0203bd0c, 0x02039aa8, 0x02096f7c],
-    "ASMK-3C73EADE": [0x202B3E8, 0x02059298, 0x0203bdd4, 0x0203a158, 0x0209e548],
-    "ASME-AEA63749": [0x202B324, 0x020599fc, 0x0203b898, 0x02039684, 0x02097594],
-    "ASME-F486F859": [0x202B5E8, 0x0205a6d8, 0x0203c4d4, 0x0203a270, 0x02098ad8]
+    # Address to insert branch for controls hook; sqrt func; getangle func; controls struct address
+    "ASMP-D3D9F14A": [0x202C408, 0x0203d744, 0x0203b4dc, 0x0209f498],
+    "ASMJ-D2BBD1E6": [0x202B5E4, 0x0203c4d0, 0x0203a26c, 0x0209803c],
+    "ASMJ-D2F380B2": [0x202B5AC, 0x0203bd0c, 0x02039aa8, 0x02096f7c],
+    "ASMK-3C73EADE": [0x202B3E8, 0x0203bdd4, 0x0203a158, 0x0209e548],
+    "ASME-AEA63749": [0x202B324, 0x0203b898, 0x02039684, 0x02097594],
+    "ASME-F486F859": [0x202B5E8, 0x0203c4d4, 0x0203a270, 0x02098ad8],
+    "ASMC-4F664FC5": [0x202D738, 0x0203ec48, 0x0203c9e0, 0x020aa6dc],
 }
 
 arm9_mode_specific_btn_map_table_address = {
@@ -52,17 +53,19 @@ arm9_mode_specific_btn_map_table_address = {
     "ASMJ-D2F380B2": 0x020738c0,
     "ASMK-3C73EADE": 0x0206ff0c,
     "ASME-AEA63749": 0x0207331c,
-    "ASME-F486F859": 0x0207403c
+    "ASME-F486F859": 0x0207403c,
+    "ASMC-4F664FC5": 0x020738a0,
 }
 
 arm7_rom_offsets = {
-    # rtc init call instr; rtc init call addr; rtc code block start addr; vblank handler end addr
-    "ASMP-D3D9F14A": [0xEB002857, 0x37f837c, 0x03801d44, 0x037f85f4],
-    "ASMJ-D2BBD1E6": [0xEB002857, 0x37f837c, 0x03801d44, 0x037f85f4],
-    "ASMJ-D2F380B2": [0xEB002857, 0x37f837c, 0x03801d44, 0x037f85f4],
-    "ASMK-3C73EADE": [0xEB002857, 0x37f837c, 0x03801d44, 0x037f85f4],
-    "ASME-AEA63749": [0xEB002867, 0x37f837c, 0x03801d84, 0x037f85f4],
-    "ASME-F486F859": [0xEB002857, 0x37f837c, 0x03801d44, 0x037f85f4]
+    # rtc init call instr (at rtc init call addr); rtc init call addr; rtc code block start addr; vblank handler end addr
+    "ASMP-D3D9F14A": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
+    "ASMJ-D2BBD1E6": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
+    "ASMJ-D2F380B2": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
+    "ASMK-3C73EADE": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
+    "ASME-AEA63749": [0xEB002867, 0x037f837c, 0x03801d84, 0x037f85f4],
+    "ASME-F486F859": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
+    "ASMC-4F664FC5": [0xEB002857, 0x037f837c, 0x03801d44, 0x037f85f4],
 }
 
 rom_descriptions = {
@@ -71,7 +74,8 @@ rom_descriptions = {
     "ASMJ-D2F380B2": "Japan v1.0",
     "ASMK-3C73EADE": "Korea v1.0",
     "ASME-AEA63749": "USA v1.0",
-    "ASME-F486F859": "USA v1.1"
+    "ASME-F486F859": "USA v1.1",
+    "ASMC-4F664FC5": "China v1.0 (iQue)"
 }
 
 
@@ -132,10 +136,9 @@ def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
     return update_rtcom_func_offset, arm7_patch_bytes
 
 
-def get_asm_symbols_params(instr_to_replace, ipc_sendmsg_func, sqrt_func, getangle_func, controls_struct):
+def get_asm_symbols_params(instr_to_replace, sqrt_func, getangle_func, controls_struct):
     return [
         "--defsym", "INPUT_UPDATE_INJECT_ADDRESS=" + hex(instr_to_replace),
-        "--defsym", "IPC_SEND_MESSAGE_FUNC_ADDRESS=" + hex(ipc_sendmsg_func),
         "--defsym", "SQRT_FUNC_ADDRESS=" + hex(sqrt_func),
         "--defsym", "GET_ANGLE_FUNC_ADDRESS=" + hex(getangle_func),
         "--defsym", "CONTROLS_STRUCT_ADDRESS=" + hex(controls_struct),

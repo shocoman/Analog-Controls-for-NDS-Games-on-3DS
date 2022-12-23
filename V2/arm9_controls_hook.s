@@ -1,5 +1,5 @@
 @ Rom version is one of "ASMP-477C", "ASMJ-B74D", "ASMJ-3875", "ASMK-53AF", "ASME-FD28", "ASME-16A0"
-@ Required symbol names: BASE_PATCH_ADDR, INIT_HOOK_ADDR, INPUT_UPDATE_INJECT_ADDRESS, IPC_SEND_MESSAGE_FUNC_ADDRESS, 
+@ Required symbol names: BASE_PATCH_ADDR, INIT_HOOK_ADDR, INPUT_UPDATE_INJECT_ADDRESS, 
 @                        SQRT_FUNC_ADDRESS, GET_ANGLE_FUNC_ADDRESS, CONTROLS_STRUCT_ADDRESS
 
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -20,14 +20,6 @@ InitialHook:
 @ To Be Jumped here From INPUT_UPDATE_INJECT_ADDRESS
 LoadValueFromStick:
     push {r0-r5, r9, lr}
-
-    @ Send msg to arm7 to update the stick value
-    mov r2, #0
-    mov r1, #0x1000 @ Read Date & Time
-    mov r0, #0x5
-    ldr r9, IPC_Send_Message_Func
-    blx r9
-
 
     @ Get ZL & ZR button values
     ldr r9, RTC_Date
@@ -146,7 +138,6 @@ CPAD_MaxRadius: .long 0x69
 RTC_Date: .long 0x027ffde8 @ date & time address: year,month,day,day_of_week, hh,mm,ss
 Div32_Func: .long 0x01ffabe4
 
-IPC_Send_Message_Func:  .long IPC_SEND_MESSAGE_FUNC_ADDRESS
 Sqrt64_Func:            .long SQRT_FUNC_ADDRESS
 GetAngle_Func:          .long GET_ANGLE_FUNC_ADDRESS
 ControlsStruct:         .long CONTROLS_STRUCT_ADDRESS
