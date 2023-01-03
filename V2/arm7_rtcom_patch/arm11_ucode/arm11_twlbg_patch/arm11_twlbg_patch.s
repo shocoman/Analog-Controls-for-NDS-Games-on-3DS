@@ -43,26 +43,30 @@ WriteDataIntoRtcRegs:
     lsl r1, #8
     orr r0, r1
     lsl r0, #8
-    str r0, [r4, #0x24] @ RTC date: day, month (CpadY), year (CpadX), _
+    str r0, [r4, #0x34] @ RTC ALRMTIM2 (CPadX => Hour, CPadY => DoW)
 
 .ifdef INCLUDE_NEW_3DS_STUFF
     @@@ START: Saving ZL&ZR&Nub data (New 3DS/2DS only)
     mov r2, sp
     mov sp, r6
 
-    ldrh r1, [r2, #0x4] @ Nub "mode" and ZL/ZR buttons: [_, _, ZL&ZR (ZL=3rd bit, ZR=2nd bit), Mode]
-    ldr r0, [r2, #0x8]  @ Load Nub posistions: [?, NubY, NubX, ?]
+    ldrb r1, [r2, #0x5] @ Nub "mode" and ZL/ZR buttons: [_, _, _, ZL&ZR (ZL=3rd bit, ZR=2nd bit)]
+    ldr r0, [r2, #0x8]  @ Load Nub positions: [?, NubY, NubX, ?]
     lsr r0, #8          @ [_, ?, NubY, NubX]
-    lsl r0, #16         @ [NubY, NubX, _, _]
-    orr r0, r1          @ [NubY, NubX, ZL&ZR, Mode]
-    @@@ END: Saving ZL&ZR&Nub data (New 3DS/2DS only)
+    lsl r0, #8          @ [?, NubY, NubX, _]
+    orr r0, r1          @ [?, NubY, NubX, ZL&ZR]
+    @@@ END: Saving ZL&ZR & Nub data (New 3DS/2DS only)
 .else
     mov r0, #0 @ write 0 anyway
 .endif
-    str r0, [r4, #0x20] @ RTC time: seconds (NubX), minutes (NubY), hours (ZL&ZR), day of the week (Mode)
+    str r0, [r4, #0x40] @ RTC COUNTER (ZLZR => LSB, NubX => MID, NubY => MSB)
 
-    movs r0, #0x10
-    strh r0, [r4, #0x0] @ rtc control reg; update Rtc Time on the NDS side
+    @@ Update Rtc on the NDS side
+    movs r0, #0x03 @ regs: COUNT, ALRMTIM2
+    lsl r0, #6
+    ldrh r1, [r4]  @ legacy RTC control reg; 
+    orr r1, r0
+    strh r1, [r4]
 
 Finish:
     pop {r0-r6}

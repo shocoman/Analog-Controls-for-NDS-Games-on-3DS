@@ -26,35 +26,48 @@
 
 #define RTC_READ_DATE_AND_TIME 0x65
 #define RTC_READ_HOUR_MINUTE_SECOND 0x67
+#define RTC_READ_ALARM_TIME_1 0x69
+#define RTC_READ_ALARM_TIME_2 0x6B
 
-// sm64ds's arm7 usually stores RTC date&time here, should be a safe place as it's not used
-#define RTCOM_DATA_OUTPUT 0x027FFDE8
+#define RTC_READ_COUNTER_EXT 0x71
+#define RTC_READ_FOUT1_EXT 0x73
+#define RTC_READ_FOUT2_EXT 0x75
+#define RTC_READ_ALARM_DATE_1_EXT 0x79
+#define RTC_READ_ALARM_DATE_2_EXT 0x7B
+
+// nds's arm7 usually stores RTC date&time close to this, should be a safe place
+#define RTCOM_DATA_OUTPUT 0x027FFDF0
 
 // an attempt to put global variables next to the code for easier memory control;
 // be aware of the compiler error "unaligned opcodes detected in executable segment"
 __attribute__((section(".text"))) static int RTCOM_STATE_TIMER = 0;
 
 static void waitByLoop(volatile int count) {
-    while (--count) {
+    // 1 loop = 4 cycles ("subs" + "bne") = ~0.3us ???
+    while (--count > 0) {
     }
 }
 
 static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) {
+    // maybe these delays aren't needed on a 3ds?
+    int initDelay = 2;        // should be at least 1us? (according to gbatek)
+    int bitTransferDelay = 9; // should be at least 5us?
+
     // Raise CS
     RTC_CR8 = CS_0 | SCK_1 | SIO_1;
-    waitByLoop(2);
+    // waitByLoop(initDelay);
     RTC_CR8 = CS_1 | SCK_1 | SIO_1;
-    waitByLoop(2);
+    // waitByLoop(initDelay);
 
     // Write command byte (high bit first)
     u8 data = *cmd++;
 
     for (u32 bit = 0; bit < 8; bit++) {
         RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-        waitByLoop(9);
+        // waitByLoop(bitTransferDelay);
 
         RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-        waitByLoop(9);
+        // waitByLoop(bitTransferDelay);
 
         data <<= 1;
     }
@@ -63,10 +76,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = *cmd++;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-            waitByLoop(9);
+            // waitByLoop(bitTransferDelay);
 
             RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-            waitByLoop(9);
+            // waitByLoop(bitTransferDelay);
 
             data <<= 1;
         }
@@ -77,10 +90,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = 0;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0;
-            waitByLoop(9);
+            // waitByLoop(bitTransferDelay);
 
             RTC_CR8 = CS_1 | SCK_1;
-            waitByLoop(9);
+            // waitByLoop(bitTransferDelay);
 
             data <<= 1;
             if (RTC_CR8 & SIO_in)
@@ -90,9 +103,9 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
     }
 
     // Finish up by dropping CS low
-    waitByLoop(2);
+    // waitByLoop(initDelay);
     RTC_CR8 = CS_0 | SCK_1;
-    waitByLoop(2);
+    // waitByLoop(initDelay);
 }
 
 static u8 readReg112() {
@@ -135,9 +148,11 @@ void rtcom_endComm(u16 old_reg_rcnt) {
 u8 rtcom_getData() { return readReg112(); }
 
 bool rtcom_waitStatus(u8 status) {
-    int timeout = 50000;
-    // int timeout = 2062500;
+    // int timeout = 50000;
+    int timeout = 2062500;
     do {
+        // each iteration takes ~11 cycles
+
         if (!(REG_IF & IRQ_NETWORK))
             continue;
 
@@ -244,22 +259,32 @@ void Execute_Code_via_RTCom(int param) {
 }
 
 static void Update_CPad_and_Nub() {
-    // u8 readCmd = RTC_READ_HOUR_MINUTE_SECOND;
-    u8 readCmd = RTC_READ_DATE_AND_TIME;
-    u8 readVal[7] = {0};
-    rtcTransferReversed(&readCmd, 1, readVal, sizeof(readVal));
+    u8 readCmd;
+    u8 readVal[6] = {0};
+
+    // Read CPadX, CPadY
+    readCmd = RTC_READ_ALARM_TIME_2;
+    rtcTransferReversed(&readCmd, 1, readVal, 2);
 
     u8 cpad_x = readVal[1];
     u8 cpad_y = readVal[0];
-
-    u8 zlzr = (readVal[5] & 0b110); // zl-zr (2nd,3rd bits)
-    u8 nub_x = readVal[4];
-    u8 nub_y = readVal[3];
-    // u8 nub_x = (uint8_t)readVal[3] - (uint8_t)readVal[4];
-    // u8 nub_y = (uint8_t)readVal[4] + (uint8_t)readVal[3];
-
     *(vu16 *)RTCOM_DATA_OUTPUT = cpad_x | (cpad_y << 8);
-    *(vu32 *)(RTCOM_DATA_OUTPUT + 4) = zlzr | (nub_x << 8) | (nub_y << 16);
+
+    //
+    // Read NubX, NubY, ZL&ZR
+    readCmd = RTC_READ_COUNTER_EXT;
+    rtcTransferReversed(&readCmd, 1, readVal, 3);
+
+    u8 zlzr = (readVal[2] & 0b110); // zl-zr (2nd,3rd bits)
+    s8 nub_x = readVal[1], nub_y = readVal[0];
+
+    // adjust the nub data by rotating it 45 degrees CCW
+    // new_x = x * cos45 - y * sin45 = x * sin45 - y * sin45 = sin45*(x-y)
+    // new_y = x * sin45 + y * cos45 = x * sin45 + y * sin45 = sin45*(x+y)
+    u32 sin_45 = 0xB50; // sqrt(2)/2 in fixed-point notation
+    s8 rot_nub_x = (sin_45 * (nub_x - nub_y) + 0x800) >> 12;
+    s8 rot_nub_y = (sin_45 * (nub_x + nub_y) + 0x800) >> 12;
+    *(vu32 *)(RTCOM_DATA_OUTPUT + 4) = zlzr | ((u8)rot_nub_x << 8) | ((u8)rot_nub_y << 16);
 }
 
 void Update_RTCom() {
@@ -288,10 +313,21 @@ void Update_RTCom() {
         Init_RTCom();
         RTCOM_STATE_TIMER += 1;
         break;
-    case MainTwlPatch:
-        Execute_Code_via_RTCom(0);
+    case MainTwlPatch: {
+        int savedIrq = enterCriticalSection();
+        {
+            // It will take a long time to execute for Arm11 (something like 20ms)
+            // Don't wait for the answer, otherwise sound glitches might come up.
+            // Arm11 should release/kill the connection automatically
+            u16 old_rcnt = rtcom_beginComm();
+            rtcom_requestAsync(RTCOM_REQ_EXECUTE_UCODE, 0);
+            rtcom_endComm(old_rcnt);
+        }
+        leaveCriticalSection(savedIrq);
+
         RTCOM_STATE_TIMER += 1;
         break;
+    }
     case InsertBranchIntoPatch: {
         Execute_Code_via_RTCom(1);
         RTCOM_STATE_TIMER += 1;

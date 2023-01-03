@@ -232,11 +232,13 @@ def generate_action_replay_code(rom_id, include_nub):
     action_replay_code = f"5{rtc_init_call_addr:07X} {rtc_init_call_instr:08X}\n"  # if equal to this instruction
     action_replay_code += f"0{rtc_init_call_addr:07X} 00000000\n"
 
-    # Copy the main code block
-    current_address = rtc_code_block_addr
-    for words in struct.iter_unpack("<I", arm7_patch_bytes):
-        action_replay_code += f"0{current_address:07X} {words[0]:08X}\n"
-        current_address += 4
+    # Copy the main Arm7+Arm11 code block
+    # use the "EXXXXXXX NNNNNNNN" instruction to copy bytes in bulk (X = address, N = number of bytes)
+    if len(arm7_patch_bytes) % 8 != 0:
+        arm7_patch_bytes += b'\x00' * (8 - len(arm7_patch_bytes) % 8)  # pad to 8 bytes boundary for simplicity
+    action_replay_code += f"E{rtc_code_block_addr:07X} {len(arm7_patch_bytes):08X}\n"
+    for words in struct.iter_unpack("<II", arm7_patch_bytes):
+        action_replay_code += f"{words[0]:08X} {words[1]:08X}\n"
 
     # Hook the VBlank IRQ Handler
     action_replay_code += f"0{vblank_handler_end_addr:07X} {branch_to_rtcom_update_instruction:08X}\n"
@@ -246,19 +248,20 @@ def generate_action_replay_code(rom_id, include_nub):
     # Arm9 Patch
     current_rom_offsets = arm9_rom_function_offsets[rom_id]
     arm9_patch_code = assemble_arm9_controls_hook_patch(get_asm_symbols_params(*current_rom_offsets))
+    # be lazy & extract the branch instruction from the assembled code itself
+    last_instr = struct.unpack("<I", arm9_patch_code[-4:])[0]
 
     patched_instr_offset = arm9_rom_function_offsets[rom_id][0]
     action_replay_code += f"5{patched_instr_offset:07X} E7D01108\n"  # if equal to this instruction
 
-    last_instr = 0
-    current_address = ARM9_CONTROLS_BASE_PATCH_ADDR
-    for words in struct.iter_unpack("<I", arm9_patch_code):
-        action_replay_code += f"0{current_address:07X} {words[0]:08X}\n"
-        current_address += 4
-        last_instr = words[0]
+    if len(arm9_patch_code) % 8 != 0:
+        arm9_patch_code += b'\x00' * (8 - len(arm9_patch_code) % 8)
+    action_replay_code += f"E{ARM9_CONTROLS_BASE_PATCH_ADDR:07X} {len(arm9_patch_code):08X}\n"
+    for words in struct.iter_unpack("<II", arm9_patch_code):
+        action_replay_code += f"{words[0]:08X} {words[1]:08X}\n"
 
     if include_nub:
-        # map ZL&ZR to camera rotation buttons
+        # map ZL&ZR to camera rotation buttons (add them as 13th & 14th buttons)
         addr = arm9_mode_specific_btn_map_table_address[rom_id]
         for i in range(3):
             zr_map_address = addr + i * 32 + 24
@@ -266,7 +269,7 @@ def generate_action_replay_code(rom_id, include_nub):
             action_replay_code += f"1{zr_map_address:07X} {0x0100:08X}\n"
             action_replay_code += f"1{zl_map_address:07X} {0x0200:08X}\n"
 
-    # insert the instruction to branch into the patch code from the controls routine
+    # insert an instruction to branch into the patch code from sm64ds' controls routine;
     action_replay_code += f"0{patched_instr_offset:07X} {last_instr:08X}\n"
     action_replay_code += f"D2000000 00000000\n"
 

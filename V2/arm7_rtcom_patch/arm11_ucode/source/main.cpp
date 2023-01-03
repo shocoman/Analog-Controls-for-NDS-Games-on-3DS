@@ -6,6 +6,8 @@
 //     return ((u8 *)0x12ac10)[offset];
 // }
 
+int counter = 0;
+
 extern "C" int handleCommand1(u8 param, u32 stage) {
     switch (param) {
     case 0: {
@@ -28,6 +30,9 @@ extern "C" int handleCommand1(u8 param, u32 stage) {
     case 2: {
         patch_twlbg_3_remove_skip_branch();
         return 0;
+    }
+    case 30: {
+        return (counter++);
     }
     }
 

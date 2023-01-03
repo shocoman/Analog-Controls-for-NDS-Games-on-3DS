@@ -1,4 +1,4 @@
-@ Rom version is one of "ASMP-477C", "ASMJ-B74D", "ASMJ-3875", "ASMK-53AF", "ASME-FD28", "ASME-16A0"
+@ Rom version is one of "ASMP-477C", "ASMJ-B74D", "ASMJ-3875", "ASMK-53AF", "ASME-FD28", "ASME-16A0", "ASMC-4F664FC5"
 @ Required symbol names: BASE_PATCH_ADDR, INIT_HOOK_ADDR, INPUT_UPDATE_INJECT_ADDRESS, 
 @                        SQRT_FUNC_ADDRESS, GET_ANGLE_FUNC_ADDRESS, CONTROLS_STRUCT_ADDRESS
 
@@ -22,8 +22,8 @@ LoadValueFromStick:
     push {r0-r5, r9, lr}
 
     @ Get ZL & ZR button values
-    ldr r9, RTC_Date
-    ldr r0, [r9, #4]    @ ZLZR (ZL=3rd bit, ZR=2nd bit), NubX, NubY, _
+    ldr r9, RTCom_Output
+    ldr r0, [r9, #4]    @ [_, NubY, NubX, ZLZR (ZL=3rd bit, ZR=2nd bit)]
 
     @ Get ZLZR
     mov r3, r0, lsl #29
@@ -40,12 +40,12 @@ LoadValueFromStick:
     @@ Apply nub to turn the camera
     mov r3, #0
     ldr r0, [r9, #4]
-    mov r1, r0, lsl #8
+    mov r1, r0, lsl #16
     mov r1, r1, asr #24 @ Sign extend X
-    cmp r1, #0x10
-    orrgt r3, #1
-    cmp r1, #-0x10
-    orrlt r3, #2
+    cmp r1, #0xC
+    orrgt r3, #2
+    cmp r1, #-0xC
+    orrlt r3, #1
 
     @ Save the camera turning buttons
     mov r3, r3, lsl #8
@@ -56,7 +56,7 @@ LoadValueFromStick:
 
 
     @ Get the stick value
-    ldr r9, RTC_Date
+    ldr r9, RTCom_Output
     ldrh r4, [r9, #0] @ [_, _, CPadY, CPadX]
     cmp r4, #0
 
@@ -135,7 +135,7 @@ LoadValueFromStick:
 ZlZr_InPreviousFrame: .long 0
 CPAD_MaxRadius: .long 0x69
 
-RTC_Date: .long 0x027ffde8 @ date & time address: year,month,day,day_of_week, hh,mm,ss
+RTCom_Output: .long 0x027ffdf0
 Div32_Func: .long 0x01ffabe4
 
 Sqrt64_Func:            .long SQRT_FUNC_ADDRESS
