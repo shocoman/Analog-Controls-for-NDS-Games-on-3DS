@@ -87,3 +87,4 @@ build/
 .vscode/
 tmp_ndstools/
 *.bin
+upload.sh

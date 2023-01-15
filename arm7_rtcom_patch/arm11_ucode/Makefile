@@ -26,13 +26,13 @@ INCLUDES	:=	include source
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=softfp -mtp=soft -mthumb-interwork 
+ARCH	:=	-march=armv6k -mtune=mpcore -mfloat-abi=softfp -mtp=soft -mthumb -mthumb-interwork 
 
 CFLAGS	:=	-g -Wall -Os -mword-relocations \
 			-fomit-frame-pointer -ffunction-sections \
 			$(ARCH) 
 
-CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS $(EXTERNAL_FLAGS)
+CFLAGS	+=	$(INCLUDE) -DARM11 -D_3DS $(EXTERNAL_DEFINES)
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11
 

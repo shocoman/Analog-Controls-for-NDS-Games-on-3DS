@@ -1,6 +1,3 @@
-#include <stdint.h>
-#include <algorithm>
-
 #include <nds.h>
 #include <nds/arm7/serial.h>
 
@@ -27,50 +24,38 @@
 #define RTC_READ_113 0x6F
 #define RTC_WRITE_113 0x6E
 
-#define RTC_READ_DATE_AND_TIME 0x65
 #define RTC_READ_HOUR_MINUTE_SECOND 0x67
-#define RTC_READ_ALARM_TIME_1 0x69
-#define RTC_READ_ALARM_TIME_2 0x6B
 
-#define RTC_READ_COUNTER_EXT 0x71
-#define RTC_READ_FOUT1_EXT 0x73
-#define RTC_READ_FOUT2_EXT 0x75
-#define RTC_READ_ALARM_DATE_1_EXT 0x79
-#define RTC_READ_ALARM_DATE_2_EXT 0x7B
-
-// sm64ds's arm7 usually stores RTC date&time near this place
-#define RTCOM_DATA_OUTPUT 0x027FFDF0
+// sm64ds's arm7 usually stores RTC date&time here, should be a safe place as it's not used
+#define RTCOM_DATA_OUTPUT 0x027FFDE8
 
 // an attempt to put global variables next to the code for easier memory control;
 // be aware of the compiler error "unaligned opcodes detected in executable segment"
 __attribute__((section(".text"))) static int RTCOM_STATE_TIMER = 0;
+__attribute__((section(".text"))) static int FRAME_COUNTER = 0;
+__attribute__((section(".text"))) static bool WAS_LID_CLOSED_LAST_FRAME = 0;
 
 static void waitByLoop(volatile int count) {
-    // 1 loop = 4 cycles ("subs" + "bne") = ~0.3us ???
-    while (--count > 0) {
+    while (--count) {
     }
 }
 
 static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) {
-    // maybe these delays aren't needed on a 3ds?
-    int initDelay = 2;        // should be at least 1us? (according to gbatek)
-    int bitTransferDelay = 9; // should be at least 5us?
-
     // Raise CS
     RTC_CR8 = CS_0 | SCK_1 | SIO_1;
-    // waitByLoop(initDelay);
+    waitByLoop(2);
     RTC_CR8 = CS_1 | SCK_1 | SIO_1;
-    // waitByLoop(initDelay);
+    waitByLoop(2);
 
     // Write command byte (high bit first)
     u8 data = *cmd++;
 
     for (u32 bit = 0; bit < 8; bit++) {
         RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-        // waitByLoop(bitTransferDelay);
+        waitByLoop(9);
 
         RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-        // waitByLoop(bitTransferDelay);
+        waitByLoop(9);
 
         data <<= 1;
     }
@@ -79,10 +64,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = *cmd++;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(9);
 
             RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(9);
 
             data <<= 1;
         }
@@ -93,10 +78,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = 0;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0;
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(9);
 
             RTC_CR8 = CS_1 | SCK_1;
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(9);
 
             data <<= 1;
             if (RTC_CR8 & SIO_in)
@@ -106,9 +91,9 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
     }
 
     // Finish up by dropping CS low
-    // waitByLoop(initDelay);
+    waitByLoop(2);
     RTC_CR8 = CS_0 | SCK_1;
-    // waitByLoop(initDelay);
+    waitByLoop(2);
 }
 
 static u8 readReg112() {
@@ -151,11 +136,9 @@ void rtcom_endComm(u16 old_reg_rcnt) {
 u8 rtcom_getData() { return readReg112(); }
 
 bool rtcom_waitStatus(u8 status) {
-    // int timeout = 50000;
-    int timeout = 2062500;
+    int timeout = 50000;
+    // int timeout = 2062500;
     do {
-        // each iteration takes ~11 cycles
-
         if (!(REG_IF & IRQ_NETWORK))
             continue;
 
@@ -247,70 +230,70 @@ void Init_RTCom() {
 
         rtcom_endComm(old_crtc);
     }
+
     leaveCriticalSection(savedIrq);
 }
 
-void Execute_Code_Async_via_RTCom(int param) {
+void Init_CPad_and_Nub_and_ZlZr() {
+
     int savedIrq = enterCriticalSection();
     {
-        // It may take relatively a long time to execute for Arm11
-        // Don't wait for the answer, otherwise sound glitches might come up
-        //  (if the Surround or Headphones audio modes are turned on).
-        // Arm11 should release/kill the connection automatically
         u16 old_rcnt = rtcom_beginComm();
-        rtcom_requestAsync(RTCOM_REQ_EXECUTE_UCODE, param);
+
+        rtcom_executeUCode(0);
+
+        rtcom_requestKill();
         rtcom_endComm(old_rcnt);
     }
     leaveCriticalSection(savedIrq);
 }
 
-static void Update_CPad_etc() {
-    u8 readCmd;
-    u8 readVal[6] = {0};
+inline void Update_CPad() {
+    if (!rtcom_executeUCode(1))
+        return;
+    u8 cpad_x = rtcom_getData();
 
-    // Read CPadX, CPadY
-    readCmd = RTC_READ_ALARM_TIME_2;
-    rtcTransferReversed(&readCmd, 1, readVal, 2);
+    if (!rtcom_requestNext(2))
+        return;
+    u8 cpad_y = rtcom_getData();
+    u16 cpad_xy = cpad_x | (cpad_y << 8);
 
-    u8 cpad_x = readVal[1];
-    u8 cpad_y = readVal[0];
-    *(vu16 *)RTCOM_DATA_OUTPUT = cpad_x | (cpad_y << 8);
-
-    //
-    // Read NubX, NubY, ZL&ZR
-    readCmd = RTC_READ_COUNTER_EXT;
-    rtcTransferReversed(&readCmd, 1, readVal, 3);
-
-    u8 zlzr = (readVal[2] & 0b110); // zl-zr (2nd,3rd bits)
-    s32 nub_x = (s8)readVal[1] , nub_y = (s8)readVal[0];
-
-    // adjust the nub data by rotating it 45 degrees CCW
-    // new_x = x * cos45 - y * sin45 = x * sin45 - y * sin45 = sin45*(x-y)
-    // new_y = x * sin45 + y * cos45 = x * sin45 + y * sin45 = sin45*(x+y)
-    s32 sin_45 = 0xB50; // sqrt(2)/2 in fixed-point notation
-    s32 rot_nub_x = (sin_45 * (nub_x - nub_y) + 0x800) >> 12;
-    s32 rot_nub_y = (sin_45 * (nub_x + nub_y) + 0x800) >> 12;
-    // clamp to ensure that there is enough space to push the X & Y into a signed byte each
-    rot_nub_x = std::clamp(rot_nub_x, (s32)INT8_MIN, (s32)INT8_MAX);
-    rot_nub_y = std::clamp(rot_nub_y, (s32)INT8_MIN, (s32)INT8_MAX);
-
-    *(vu32 *)(RTCOM_DATA_OUTPUT + 4) = zlzr | ((u8)rot_nub_x << 8) | ((u8)rot_nub_y << 16);
+    *(vu16 *)RTCOM_DATA_OUTPUT = cpad_xy;
 }
 
-__attribute__((target("arm"))) void Update_RTCom() {
+inline void Update_NubZLZR() {
+    u32 zlzr = 0;
+
+#ifdef INCLUDE_NEW_3DS_STUFF
+    if (!rtcom_requestNext(3))
+        return;
+    zlzr = rtcom_getData();
+#endif
+
+    *(vu32 *)(RTCOM_DATA_OUTPUT + 4) = zlzr;
+}
+
+void Update_RTCom() {
     // Steps: Wait; Upload the code to Arm11;
-    //        Wait; Tell Arm11 to patch TwlBg and insert a skip branch
-    //        Wait; Tell Arm11 to insert a branch into the patched TwlBg area
-    //        Wait; Tell Arm11 to remove the skip branch (and allow the patched-in code to run)
-    //        Wait; Read the CPad and Nub data from the RTC regs
+    //        Wait; Init CPad and Nub stuff;
+    //        Wait; Start pulling the Cpad and Nub data;
     enum RtcomStateTime {
         Start = 0,
-        UploadCode = 10,
-        MainTwlPatch = UploadCode + 200,
-        InsertBranchIntoPatch = MainTwlPatch + 50,
-        RemoveSkipBranch = InsertBranchIntoPatch + 50,
-        ReadyToRead = RemoveSkipBranch + 10,
+        UploadCode = 5,
+        InitCPad = UploadCode + 200,
+        ReadyToRead = InitCPad + 200,
     };
+
+    // don't communicate via RTCom while the lid is closed
+    // reupload the code when it'll be opened
+    bool is_lid_closed_now = (REG_KEYXY >> 7) & 1; // 7th bit - lid is opened/closed
+    if (is_lid_closed_now) {
+        WAS_LID_CLOSED_LAST_FRAME = true;
+        return;
+    } else if (WAS_LID_CLOSED_LAST_FRAME) {
+        RTCOM_STATE_TIMER = Start; // start anew
+        WAS_LID_CLOSED_LAST_FRAME = false;
+    }
 
     // execute certain rtcom state depending on the timer value
     switch (RTCOM_STATE_TIMER) {
@@ -318,26 +301,30 @@ __attribute__((target("arm"))) void Update_RTCom() {
         Init_RTCom();
         RTCOM_STATE_TIMER += 1;
         break;
-    case MainTwlPatch: {
-        Execute_Code_Async_via_RTCom(1);
+    case InitCPad:
+        Init_CPad_and_Nub_and_ZlZr();
         RTCOM_STATE_TIMER += 1;
         break;
-    }
-    case InsertBranchIntoPatch: {
-        Execute_Code_Async_via_RTCom(2);
-        RTCOM_STATE_TIMER += 1;
+    case ReadyToRead:
+        // pretend that RTCom has been successfully initialized by this moment
+        FRAME_COUNTER += 1;
+
+        if (FRAME_COUNTER % 2 == 0) {
+            int savedIrq = enterCriticalSection();
+            {
+                u16 old_rcnt = rtcom_beginComm();
+                Update_CPad(); // once 2 frames
+
+                if (FRAME_COUNTER % 4 == 0) {
+                    Update_NubZLZR(); // once 4 frames
+                }
+
+                rtcom_requestKill();
+                rtcom_endComm(old_rcnt);
+            }
+            leaveCriticalSection(savedIrq);
+        }
         break;
-    }
-    case RemoveSkipBranch: {
-        Execute_Code_Async_via_RTCom(3);
-        RTCOM_STATE_TIMER += 1;
-        break;
-    }
-    case ReadyToRead: {
-        // pretend that RTCom has been successfully initialized by this moment and everything's fine
-        Update_CPad_etc();
-        break;
-    }
     default:
         RTCOM_STATE_TIMER += 1;
         break;

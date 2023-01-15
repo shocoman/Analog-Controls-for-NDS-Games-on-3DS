@@ -1,14 +1,14 @@
 #include <dswifi7.h>
 #include <maxmod7.h>
 #include <nds.h>
+
 #include "rtcom.h"
 
-void VblankHandler(void) {
-    Update_RTCom();
-}
+void VblankHandler(void) { Update_RTCom(); }
 
 volatile bool exitflag = false;
-int main() {
+
+__attribute__((target("arm"))) int main() {
     irqInit();
     irqSet(IRQ_VBLANK, VblankHandler);
     irqEnable(IRQ_VBLANK);

@@ -23,14 +23,14 @@ UCODE		:= ../arm11_ucode
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
-ARCH	:=	-mthumb-interwork
+ARCH	:= -mthumb -mthumb-interwork
 
-CFLAGS	:=	-g -Wall -O2\
+CFLAGS	:=	-g -Wall -Os\
 		-mcpu=arm7tdmi -mtune=arm7tdmi -fomit-frame-pointer\
 		-ffast-math \
 		$(ARCH)
 
-CFLAGS	+=	$(INCLUDE) -DARM7 $(EXTERNAL_FLAGS)
+CFLAGS	+=	$(INCLUDE) -DARM7 $(EXTERNAL_DEFINES)
 CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions
 
 
