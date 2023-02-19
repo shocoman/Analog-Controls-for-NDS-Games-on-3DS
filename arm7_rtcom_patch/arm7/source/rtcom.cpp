@@ -53,24 +53,25 @@ static void waitByLoop(volatile int count) {
 
 static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) {
     // maybe these delays aren't needed on a 3ds?
+    // in rare cases, arm11 ucode uploading goes bad without them
     int initDelay = 2;        // should be at least 1us? (according to gbatek)
     int bitTransferDelay = 9; // should be at least 5us?
 
     // Raise CS
     RTC_CR8 = CS_0 | SCK_1 | SIO_1;
-    // waitByLoop(initDelay);
+    waitByLoop(initDelay);
     RTC_CR8 = CS_1 | SCK_1 | SIO_1;
-    // waitByLoop(initDelay);
+    waitByLoop(initDelay);
 
     // Write command byte (high bit first)
     u8 data = *cmd++;
 
     for (u32 bit = 0; bit < 8; bit++) {
         RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-        // waitByLoop(bitTransferDelay);
+        waitByLoop(bitTransferDelay);
 
         RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-        // waitByLoop(bitTransferDelay);
+        waitByLoop(bitTransferDelay);
 
         data <<= 1;
     }
@@ -79,10 +80,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = *cmd++;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0 | SIO_out | (data >> 7);
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(bitTransferDelay);
 
             RTC_CR8 = CS_1 | SCK_1 | SIO_out | (data >> 7);
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(bitTransferDelay);
 
             data <<= 1;
         }
@@ -93,10 +94,10 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
         data = 0;
         for (u32 bit = 0; bit < 8; bit++) {
             RTC_CR8 = CS_1 | SCK_0;
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(bitTransferDelay);
 
             RTC_CR8 = CS_1 | SCK_1;
-            // waitByLoop(bitTransferDelay);
+            waitByLoop(bitTransferDelay);
 
             data <<= 1;
             if (RTC_CR8 & SIO_in)
@@ -106,9 +107,9 @@ static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) 
     }
 
     // Finish up by dropping CS low
-    // waitByLoop(initDelay);
+    waitByLoop(initDelay);
     RTC_CR8 = CS_0 | SCK_1;
-    // waitByLoop(initDelay);
+    waitByLoop(initDelay);
 }
 
 static u8 readReg112() {
