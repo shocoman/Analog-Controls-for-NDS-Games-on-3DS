@@ -46,16 +46,17 @@
 __attribute__((section(".text"))) static int RTCOM_STATE_TIMER = 0;
 
 static void waitByLoop(volatile int count) {
-    // 1 loop = 4 cycles ("subs" + "bne") = ~0.3us ???
+    // 1 loop = 10 cycles = ~0.3us ???
     while (--count > 0) {
     }
 }
 
 static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) {
-    // maybe these delays aren't needed on a 3ds?
-    // in rare cases, arm11 ucode uploading goes bad without them
-    int initDelay = 2;        // should be at least 1us? (according to gbatek)
-    int bitTransferDelay = 9; // should be at least 5us?
+    // These delays are most likely unnecessary and can be removed to speed up transferring (if needed). 
+    // Although when the delays are too small, there is a higher-than-usual chance to encounter errors while uploading code through the rtcom.
+    // And the worst part is that these errors won't be signaled by it (usually they are).
+    int initDelay = 2;
+    int bitTransferDelay = 9;
 
     // Raise CS
     RTC_CR8 = CS_0 | SCK_1 | SIO_1;
@@ -212,7 +213,8 @@ bool rtcom_uploadUCode(const void *uCode, u32 length) {
 
     // finish uploading
     rtcom_requestAsync(RTCOM_REQ_KEEPALIVE);
-    rtcom_waitDone();
+    if (!rtcom_waitDone())
+        return false;
 
     // make it executable
     return rtcom_request(RTCOM_REQ_FINISH_UCODE);
@@ -226,7 +228,7 @@ bool rtcom_executeUCode(u8 param) { return rtcom_request(RTCOM_REQ_EXECUTE_UCODE
 
 void Init_RTCom() {
     int savedIrq = enterCriticalSection();
-    {
+    while (true) {
         u16 old_crtc = rtcom_beginComm();
         int trycount = 10;
 
@@ -247,6 +249,11 @@ void Init_RTCom() {
         }
 
         rtcom_endComm(old_crtc);
+
+        if (trycount > 0)
+            break; // success
+
+        // there is no point returning without success
     }
     leaveCriticalSection(savedIrq);
 }
