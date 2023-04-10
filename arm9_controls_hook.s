@@ -55,11 +55,15 @@ LoadValueFromStick:
     strh r0, [r9, #+0x4]
 
 
-    @ Get the stick value
+    @ Get the CPad value
     ldr r9, RTCom_Output
     ldrh r4, [r9, #0] @ [_, _, CPadY, CPadX]
-    cmp r4, #0
 
+    @ hide the virtual joystick on the bottom screen if we're using the CPad
+    mov r0, r4
+    bl ToggleVirtualJoystickVisibility
+
+    cmp r4, #0
     @ bail out if the stick isn't moving
     popeq {r0-r5,r9,lr}
     ldreqb r1,[r0,r8,lsl #0x2] @ put back the replaced instruction
@@ -130,7 +134,56 @@ LoadValueFromStick:
     bx r0
 
 
-@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@ r0 == 0 => show the joystick sprite (a target) on the bottom screen (if it's hidden)
+@ r0 != 0 => hide it
+ToggleVirtualJoystickVisibility:
+    push    {r0-r7, lr}
+    ldr     r5, noop_opcode
+    ldr     r6, show_joystick_opcode 
+    ldr     r4, show_joystick_opcode_addr
+    ldr     r2, [r4]
+
+    cmp     r0, #0
+    bne     hide_joystick
+
+show_joystick:
+    cmp     r2, r5 @ only if the joystick was hidden
+    bne     toggle_joystick_end
+        @ wait for some time (otherwise right after we release the CPad the joystick will temporarily pop up on the screen)
+        ldr     r2, timer_to_unblock_joystick
+        subs    r2, #1
+        str     r2, timer_to_unblock_joystick
+        strle   r6, [r4] @ put the previously "noped" instruction back
+    b   toggle_joystick_end
+
+hide_joystick:
+    mov     r7, #20
+    str     r7, timer_to_unblock_joystick
+
+    cmp     r2, r6
+    bne     toggle_joystick_end
+        @ exclude the joystick texture from the list of BG objects to draw for the Engine B
+        ldrh    r0, [r4, #-12]
+        sub     r0, #4
+        ldr     r3, [r4, r0] @ EngineB_Display_BGs
+        ldrb    r1, [r3]
+        bic     r1, #4
+        strb    r1, [r3]
+        @ prevent writing into "EngineB_Display_BGs"
+        str     r5, [r4]    @ "nop" the instruction
+
+toggle_joystick_end:
+    pop     {r0-r7, pc}
+
+show_joystick_opcode_addr:  .long HIDE_VIRTUAL_JOYSTICK_ADDR
+show_joystick_opcode:       .long 0xe3811004 @ orr r1, r1, #0x4
+noop_opcode:                .long 0xe1a08008 @ mov r8, r8
+
+timer_to_unblock_joystick:  .long 0x0
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
 
 ZlZr_InPreviousFrame: .long 0
 CPAD_MaxRadius: .long 0x69

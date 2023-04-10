@@ -10,7 +10,7 @@ from collections import defaultdict
 
 ARM9_ROM_ADDRESS = 0x02004000
 ARM9_CONTROLS_INIT_HOOK_ADDR = 0x020049EC
-ARM9_CONTROLS_BASE_PATCH_ADDR = 0x02004b00  # or 0x0234B500?
+ARM9_CONTROLS_BASE_PATCH_ADDR = 0x02004b00
 
 # rom_path = "Super Mario 64 DS (USA).nds"
 rom_path = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -37,14 +37,14 @@ ndstool_params = [
 ]
 
 arm9_rom_function_offsets = {
-    # Address to insert branch for controls hook; sqrt func; getangle func; controls struct address
-    "ASMP-D3D9F14A": [0x202C408, 0x0203d744, 0x0203b4dc, 0x0209f498],
-    "ASMJ-D2BBD1E6": [0x202B5E4, 0x0203c4d0, 0x0203a26c, 0x0209803c],
-    "ASMJ-D2F380B2": [0x202B5AC, 0x0203bd0c, 0x02039aa8, 0x02096f7c],
-    "ASMK-3C73EADE": [0x202B3E8, 0x0203bdd4, 0x0203a158, 0x0209e548],
-    "ASME-AEA63749": [0x202B324, 0x0203b898, 0x02039684, 0x02097594],
-    "ASME-F486F859": [0x202B5E8, 0x0203c4d4, 0x0203a270, 0x02098ad8],
-    "ASMC-4F664FC5": [0x202D738, 0x0203ec48, 0x0203c9e0, 0x020aa6dc],
+    # Address to insert branch for controls hook; sqrt func; getangle func; controls struct address; hide virtual joystick addr
+    "ASMP-D3D9F14A": [0x202C408, 0x0203d744, 0x0203b4dc, 0x0209f498, 0x020FA7E4],
+    "ASMJ-D2BBD1E6": [0x202B5E4, 0x0203c4d0, 0x0203a26c, 0x0209803c, 0x020F178C],
+    "ASMJ-D2F380B2": [0x202B5AC, 0x0203bd0c, 0x02039aa8, 0x02096f7c, 0x020F05AC],
+    "ASMK-3C73EADE": [0x202B3E8, 0x0203bdd4, 0x0203a158, 0x0209e548, 0x020F97A4],
+    "ASME-AEA63749": [0x202B324, 0x0203b898, 0x02039684, 0x02097594, 0x020F0DAC],
+    "ASME-F486F859": [0x202B5E8, 0x0203c4d4, 0x0203a270, 0x02098ad8, 0x020F286C],
+    "ASMC-4F664FC5": [0x202D738, 0x0203ec48, 0x0203c9e0, 0x020aa6dc, 0x021058C4],
 }
 
 arm9_mode_specific_btn_map_table_address = {
@@ -172,12 +172,13 @@ def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
     return update_rtcom_func_offset, arm7_patch_bytes
 
 
-def get_asm_symbols_params(instr_to_replace, sqrt_func, getangle_func, controls_struct):
+def get_asm_symbols_params(instr_to_replace, sqrt_func, getangle_func, controls_struct, hide_virt_joystick):
     return [
         "--defsym", "INPUT_UPDATE_INJECT_ADDRESS=" + hex(instr_to_replace),
         "--defsym", "SQRT_FUNC_ADDRESS=" + hex(sqrt_func),
         "--defsym", "GET_ANGLE_FUNC_ADDRESS=" + hex(getangle_func),
         "--defsym", "CONTROLS_STRUCT_ADDRESS=" + hex(controls_struct),
+        "--defsym", "HIDE_VIRTUAL_JOYSTICK_ADDR=" + hex(hide_virt_joystick),
         "--defsym", "INIT_HOOK_ADDR=" + hex(ARM9_CONTROLS_INIT_HOOK_ADDR),
         "--defsym", "BASE_PATCH_ADDR=" + hex(ARM9_CONTROLS_BASE_PATCH_ADDR),
     ]

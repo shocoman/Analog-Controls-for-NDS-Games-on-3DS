@@ -51,12 +51,17 @@ static void waitByLoop(volatile int count) {
     }
 }
 
-static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen) {
-    // These delays are most likely unnecessary and can be removed to speed up transferring (if needed). 
-    // Although when the delays are too small, there is a higher-than-usual chance to encounter errors while uploading code through the rtcom.
-    // And the worst part is that these errors won't be signaled by it (usually they are).
+static void rtcTransferReversed(u8 *cmd, u32 cmdLen, u8 *result, u32 resultLen, bool fastMode = false) {
+    // Some games are sensitive to delays in the VBlank IRQ (the place where this code is called from)
+    // to the point becoming literally unplayable (like graphics and timing glitches, etc).
+    // To solve this problem we can reduce the following delays. As far as I know, they are completely unnecessary,
+    // except one thing. The delays are needed when we're uploading code to Arm11 via RTCom,
+    // otherwise there's a high chance of errors, the code may turn out to be corrupted during the transfer.
+    // The worst part is these errors will be undetectable (normally they are supposed to be signaled by RTCom).
+    // So use large delays to upload code into Arm11 (just once, at startup),
+    // and then small delays (or none at all) to simply read the CPad stuff, etc each frame.
     int initDelay = 2;
-    int bitTransferDelay = 9;
+    int bitTransferDelay = fastMode ? 1 : 9;
 
     // Raise CS
     RTC_CR8 = CS_0 | SCK_1 | SIO_1;
@@ -278,7 +283,7 @@ static void Update_CPad_etc() {
 
     // Read CPadX, CPadY
     readCmd = RTC_READ_ALARM_TIME_2;
-    rtcTransferReversed(&readCmd, 1, readVal, 2);
+    rtcTransferReversed(&readCmd, 1, readVal, 2, true);
 
     u8 cpad_x = readVal[1];
     u8 cpad_y = readVal[0];
@@ -287,7 +292,7 @@ static void Update_CPad_etc() {
     //
     // Read NubX, NubY, ZL&ZR
     readCmd = RTC_READ_COUNTER_EXT;
-    rtcTransferReversed(&readCmd, 1, readVal, 3);
+    rtcTransferReversed(&readCmd, 1, readVal, 3, true);
 
     u8 zlzr = (readVal[2] & 0b110); // zl-zr (2nd,3rd bits)
     s32 nub_x = (s8)readVal[1] , nub_y = (s8)readVal[0];
