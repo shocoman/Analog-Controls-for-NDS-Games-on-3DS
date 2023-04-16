@@ -30,9 +30,8 @@ Read_CPAD:
     @ Sign extend X
     lsl     r4, #24
     asr     r4, #24
-    @ Sign extend Y & negate
+    @ Sign extend Y
     asr     r5, #24
-    @ rsb     r5, #0
 
     push    {r2}
     @@ Get movement direction
@@ -40,8 +39,14 @@ Read_CPAD:
     mov     r1, r5
     ldr     r3, GetAngle_Func
     blx     r3
-    @ adds    r0, #0x8000
-    @ rsblt   r0, #0
+
+    @ round the angle down to zero (the UP direction) if it's close enough already
+    @ (due to an annoying camera that would start turning if you're not precisely pushing the cpad Up)
+    mov     r1, r0, lsl #16
+    movs    r1, r1, asr #16
+    rsblt   r1, #0
+    cmp     r1, #0x200
+    movle   r0, #0
 
     pop     {r2}
     pop     {r4,r5}
@@ -50,4 +55,4 @@ Read_CPAD:
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 RTCom_Output:       .long 0x027ffdf0
-GetAngle_Func:      .long GET_ANGLE_FUNC + 1
+GetAngle_Func:      .long GET_ANGLE_FUNC | 1

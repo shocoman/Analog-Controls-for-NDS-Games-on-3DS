@@ -69,7 +69,6 @@ TurnCamera_Y:
     ldr     r0, RTCom_Output
     ldrsh   r2, [r0, #8] @ CStick Y
     lsl     r2, #4
-    adds    r2, r2, asr #1
 
 @ camera_up:
     addgt   lr, #0x24

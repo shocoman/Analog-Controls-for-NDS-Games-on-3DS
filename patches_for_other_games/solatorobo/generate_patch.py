@@ -185,8 +185,7 @@ def generate_action_replay_code(rom_signature):
             5{hook_addr:07X} {orig_instr:08X}
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
                 0{hook_addr:07X} {branch_instr:08X}
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

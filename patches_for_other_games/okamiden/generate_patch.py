@@ -186,46 +186,27 @@ def generate_action_replay_code(rom_signature):
     ar_code += f"""
         # wait for some time, just to be sure (0x02FFFC3C is a frame counter)
         42FFFC3C 00000100
-            # check if we can hook the movement in the freeroam mode
-            9{freeroam_hook_addr:07X} {freeroam_and_fighting_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-
-            # check if we can hook the movement in the fighting mode
-            9{fighting_hook_addr:07X} {freeroam_and_fighting_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-
-            # check if we can hook the movement in the unknown mode
-            9{unknown_mode_hook_addr:07X} {unknown_mode_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-        D0000000 00000000
-
-        C4000000 00000000   # OFFSET = current address in the cheatcode (scratch register)
-        D6000000 00000004   # *(OFFSET+4) = DATA
-        40000000 00000000   # if DATA > 0 (i.e. we can hook either the movement or camera rotation)
-            D3000000 00000000   # OFFSET = 0
             6{arm9_code_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_code_address)} # main patch
-            D0000000 00000000
+        D2000000 00000000
 
-            # where possible, insert branches into the written patch code
+        42FFFC3C 00000150
             9{freeroam_hook_addr:07X} {freeroam_and_fighting_orig_instr:08X}
                 1{freeroam_hook_addr+0:07X} {freeroam_branch_instr[0]:08X}
                 1{freeroam_hook_addr+2:07X} {freeroam_branch_instr[1]:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        42FFFC3C 00000150
             9{fighting_hook_addr:07X} {freeroam_and_fighting_orig_instr:08X}
                 1{fighting_hook_addr+0:07X} {fighting_branch_instr[0]:08X}
                 1{fighting_hook_addr+2:07X} {fighting_branch_instr[1]:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        42FFFC3C 00000150
             9{unknown_mode_hook_addr:07X} {unknown_mode_orig_instr:08X}
                 1{unknown_mode_hook_addr+0:07X} {unknown_mode_branch_instr[0]:08X}
                 1{unknown_mode_hook_addr+2:07X} {unknown_mode_branch_instr[1]:08X}
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

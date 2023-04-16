@@ -197,23 +197,21 @@ def generate_action_replay_code(rom_signature, include_cstick_support):
 
     ar_code += f"""
         # wait for some time, just to be sure (0x2FFFC3C is a frame counter)
-        427FFC3C 00000400
-            # check if we can hook the movement
+        427FFC3C 00000300
             6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-            D0000000 00000000
+        D2000000 00000000
 
-            # where possible, insert branches into the written patch code
+        427FFC3C 00000400
             5{move_hook_addr:07X} {move_orig_instr:08X}
                 0{move_hook_addr:07X} {move_branch_instr:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        427FFC3C 00000400
             5{cam_turn_y_hook_addr:07X} {cam_turn_y_orig_instr:08X}
                 0{cam_turn_x_hook_addr:07X} {cam_turn_x_branch_instr:08X}
                 0{cam_turn_y_hook_addr:07X} {cam_turn_y_branch_instr:08X}
-            D0000000 00000000
-
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

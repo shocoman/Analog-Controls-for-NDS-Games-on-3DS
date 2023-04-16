@@ -162,7 +162,7 @@ def generate_action_replay_code(rom_signature):
             {ar_code__bulk_write(arm7_patch_bytes, arm7_code_start_address)}    # write the Arm7 + Arm11 code
 
             0{vblank_handler_end:07X} {branch_to_rtcom_update_instruction:08X}  # Hook the VBlank IRQ Handler
-        D2000000 00000000
+        D0000000 00000000
     """
 
     ####################################################################################
@@ -185,34 +185,20 @@ def generate_action_replay_code(rom_signature):
     ar_code += f"""
         # wait for some time, just to be sure (0x27FFC3C is a frame counter)
         427FFC3C 00000100
-            # check if we can hook the "player movement"
-            5{dude_move_hook_addr:07X} {dude_move_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-
-            # # check if we can hook the "camera rotation with keys"
-            5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-        D0000000 00000000
-
-        C4000000 00000000   # OFFSET = current address in the cheatcode (scratch register)
-        D6000000 00000004   # *(OFFSET+4) = DATA
-        40000000 00000000   # if DATA > 0 (i.e. we can hook either the movement or camera rotation)
-            D3000000 00000000   # OFFSET = 0
             6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-            D0000000 00000000
+        D2000000 00000000
 
-            # where possible, insert branches into the written patch code
+        # where possible, insert branches into the written patch code
+        427FFC3C 00000150
             5{dude_move_hook_addr:07X} {dude_move_orig_instr:08X}
                 0{dude_move_hook_addr:07X} {player_move_branch_instr:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        427FFC3C 00000150
             5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
                 0{camera_turn_hook_addr:07X} {camera_turn_branch_instr:08X}
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

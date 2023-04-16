@@ -28,7 +28,7 @@ roms_info = {
     "AMHP-E67BB94B": RomInfo(0x037FE9AC, 0x037FEA78, 0x027F6508, 0x037FBA9C, 0x037F84D4, 0x02021DE4, 0x02024B24, 0x02024F14, 0x02024314, 0x02036B20, "Europe v1.1"),
     "AMHJ-C3451356": RomInfo(0x037FE9AC, 0x037FEA78, 0x027F6508, 0x037FBA9C, 0x037F84D4, 0x02021DC0, 0x02024B00, 0x02024EF0, 0x020242F0, 0x02036CC8, "Japan v1.0"),
     "AMHJ-19A99F02": RomInfo(0x037FE9AC, 0x037FEA78, 0x027F6508, 0x037FBA9C, 0x037F84D4, 0x02021DC0, 0x02024B00, 0x02024EF0, 0x020242F0, 0x02036CC8, "Japan v1.1"),
-    # "AMHK-A875D88C": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, [], [], [], [], [], [], [], "Korea v1.0"),
+    # "AMHK-A875D88C": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, [], [], [], [], [], [], [], "Korea v1.0"), # uses different SDK version
     "AMHE-E18D1857": RomInfo(0x037FE9AC, 0x037FEA78, 0x027F6508, 0x037FBA9C, 0x037F84D4, 0x02021DE4, 0x02024B24, 0x02024F14, 0x02024314, 0x02036BB0, "USA v1.0"),
     "AMHE-187B29B5": RomInfo(0x037FE9AC, 0x037FEA78, 0x027F6508, 0x037FBA9C, 0x037F84D4, 0x02021DE4, 0x02024B24, 0x02024F14, 0x02024314, 0x02036B20, "USA v1.1"),
 }
@@ -183,7 +183,7 @@ def generate_action_replay_code(rom_signature):
     roll_hook_addr = rom_info.ball_move_hook
     roll_orig_instr = 0xe1a01f81  # mov r1, r1, lsl #0x1f
 
-    # Arm9 Patch. Player walking
+    # Arm9 Patch. Walking
     walk_addr = ARM9_CODE_START_ADDRESS + walk_offset
     walk_horiz_hook_addr = rom_info.samus_move_horizontally_hook
     walk_vert_hook_addr = rom_info.samus_move_vertically_hook
@@ -195,50 +195,31 @@ def generate_action_replay_code(rom_signature):
     cam_orig_instr = 0xe1d10eb4  # ldrh r0, [r1, #0xe4]
 
     ar_code += f"""
-        # check if we can hook the player walking
-        5{walk_horiz_hook_addr:07X} {walk_orig_instr:08X}
-            D4000000 00000001   # DATA += 1
-        D0000000 00000000
+        # upload the main patch code if it isn't already
+        6{ARM9_CODE_START_ADDRESS:07X} {int.from_bytes(code_binary[:4], 'little'):08X}
+            {ar_code__bulk_write(code_binary, ARM9_CODE_START_ADDRESS)} # main patch
+        D2000000 00000000
 
         # check if we can hook the morph ball rolling
         5{roll_hook_addr:07X} {roll_orig_instr:08X}
-            D4000000 00000001   # DATA += 1
-        D0000000 00000000
+            0{roll_hook_addr:07X} {instr__arm_b(roll_hook_addr, roll_addr, True):08X}
+        D2000000 00000000
+
+        # check if we can hook the walking
+        5{walk_horiz_hook_addr:07X} {walk_orig_instr:08X}
+            # branch to the code and pass 0 in r0 to move left/right
+            0{walk_horiz_hook_addr-4:07X} {0xe3a00000:08X} # mov r0, 0
+            0{walk_horiz_hook_addr:07X} {instr__arm_b(walk_horiz_hook_addr, walk_addr, True):08X} 
+
+            # branch to the code and pass 1 in r0 to move forward/backward
+            0{walk_vert_hook_addr-4:07X} {0xe3a00001:08X}  # mov r0, 1
+            0{walk_vert_hook_addr:07X} {instr__arm_b(walk_vert_hook_addr, walk_addr, True):08X} 
+        D2000000 00000000
 
         # check if we can hook the camera rotation
         5{cam_hook_addr:07X} {cam_orig_instr:08X}
-            D4000000 00000001   # DATA += 1
-        D0000000 00000000
-
-        C4000000 00000000   # OFFSET = current address in the cheatcode (scratch register)
-        D6000000 00000004   # *(OFFSET+4) = DATA
-        40000000 00000000   # if DATA > 0 (i.e. we can hook at least some of them)
-            D3000000 00000000   # OFFSET = 0
-
-            # upload the main patch code if it isn't already
-            6{ARM9_CODE_START_ADDRESS:07X} {int.from_bytes(code_binary[:4], 'little'):08X}
-                {ar_code__bulk_write(code_binary, ARM9_CODE_START_ADDRESS)} # main patch
-            D0000000 00000000
-
-            # where possible, insert branches into the uploaded code
-            5{roll_hook_addr:07X} {roll_orig_instr:08X}
-                0{roll_hook_addr:07X} {instr__arm_b(roll_hook_addr, roll_addr, True):08X}
-            D0000000 00000000
-
-            5{walk_horiz_hook_addr:07X} {walk_orig_instr:08X}
-                # branch to the code and pass 0 in r0 to move left/right
-                0{walk_horiz_hook_addr-4:07X} {0xe3a00000:08X} # mov r0, 0
-                0{walk_horiz_hook_addr:07X} {instr__arm_b(walk_horiz_hook_addr, walk_addr, True):08X} 
-
-                # branch to the code and pass 1 in r0 to move forward/backward
-                0{walk_vert_hook_addr-4:07X} {0xe3a00001:08X}  # mov r0, 1
-                0{walk_vert_hook_addr:07X} {instr__arm_b(walk_vert_hook_addr, walk_addr, True):08X} 
-            D0000000 00000000
-
-            5{cam_hook_addr:07X} {cam_orig_instr:08X}
-                0{cam_hook_addr:07X} {instr__arm_b(cam_hook_addr, cam_rot_addr, True):08X}
-            D0000000 00000000
-        D0000000 00000000
+            0{cam_hook_addr:07X} {instr__arm_b(cam_hook_addr, cam_rot_addr, True):08X}
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

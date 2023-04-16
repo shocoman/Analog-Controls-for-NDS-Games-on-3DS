@@ -186,13 +186,11 @@ def generate_action_replay_code(rom_signature):
                 1{hook_addr+2:07X} {branch_instr[0]:08X}
                 1{hook_addr+4:07X} {branch_instr[1]:08X}
 
-                # any directional roll (on USA v1.0 and Europe v1.0)
+                # omnidirectional roll (on USA v1.0 and Europe v1.0)
                 # 12083E36 00004801
                 # 02083E38 E0018800
                 # 02083E3C 027E353C
-
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

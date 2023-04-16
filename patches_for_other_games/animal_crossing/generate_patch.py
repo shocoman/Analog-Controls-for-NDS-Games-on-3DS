@@ -159,7 +159,7 @@ def generate_action_replay_code(rom_signature):
             {ar_code__bulk_write(arm7_patch_bytes, arm7_code_start_address)}    # write the Arm7 + Arm11 code
 
             0{vblank_handler_end:07X} {branch_to_rtcom_update_instruction:08X}  # Hook the VBlank IRQ Handler
-        D2000000 00000000
+        D0000000 00000000
     """
 
     ####################################################################################
@@ -175,7 +175,7 @@ def generate_action_replay_code(rom_signature):
             {ar_code__bulk_write(code_binary, start_address)}
             1{branch_from_addr:07X} {new_branch_instr[0]:08X}
             1{branch_from_addr+2:07X} {new_branch_instr[1]:08X}
-        D2000000 00000000
+        D0000000 00000000
     """
 
     formatted_cheatcode = ""

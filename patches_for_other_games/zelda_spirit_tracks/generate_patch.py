@@ -28,6 +28,13 @@ roms_info = {
     "BKIJ-E6ABCF14": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x02096760, 0x021329F8, 0x0203B6EC, 0x01FFBBE0, 0x01FF9258, 0x020BFD30, "Japan v1.0"),
     "BKIE-94771A5D": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x02094F8C, 0x021306B4, 0x0203A194, 0x01FFBBE0, 0x01FF9258, 0x020BE4E4, "USA v1.0"),
     "BKIE-EBB51682": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x02094FE0, 0x021307D4, 0x0203A194, 0x01FFBBE0, 0x01FF9258, 0x020BE524, "USA v1.1"),
+
+    # dpad mod
+    # "BKIE-5818C636": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x02094F8C, 0x021306B4, 0x0203A194, 0x01FFBBE0, 0x01FF9258, 0x020BE4E4, "USA v1.0"),
+
+    # alternative version?
+    # "BKIE-94771A5D": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x020be554, 0x021306B4, 0x0203A194, 0x01FFBBE0, 0x01FF9258, 0x020BE4E4, "USA v1.0"),
+    # "BKIE-5818C636": RomInfo(0x037FE410, 0x037FE39C, 0x027F5CD0, 0x037F84D8, 0x037F8414, 0x02000A78, 0x020be554, 0x021306B4, 0x0203A194, 0x01FFBBE0, 0x01FF9258, 0x020BE4E4, "USA v1.0"),
 }
 
 
@@ -167,7 +174,7 @@ def generate_action_replay_code(rom_signature):
             {ar_code__bulk_write(arm7_patch_bytes, arm7_code_start_address)}    # write the Arm7 + Arm11 code
 
             0{vblank_handler_end:07X} {branch_to_rtcom_update_instruction:08X}  # Hook the VBlank IRQ Handler
-        D2000000 00000000
+        D0000000 00000000
     """
 
     ####################################################################################
@@ -196,42 +203,24 @@ def generate_action_replay_code(rom_signature):
     ar_code += f"""
         # wait for some time, just to be sure (0x27FFC3C is a frame counter)
         427FFC3C 00000100
-            # check if we can hook Link's movement
-            5{player_move_hook_addr:07X} {player_move_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-
-            5{save_camera_hook_addr:07X} {save_camera_angle_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-
-            # check if we can hook the train camera rotation
-            5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
-                D4000000 00000001   # DATA += 1
-            D0000000 00000000
-        D0000000 00000000
-
-        C4000000 00000000   # OFFSET = current address in the cheatcode (scratch register)
-        D6000000 00000004   # *(OFFSET+4) = DATA
-        40000000 00000000   # if DATA > 0 (i.e. we can hook either the movement or camera rotation)
-            D3000000 00000000   # OFFSET = 0
             6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-            D0000000 00000000
+        D2000000 00000000
 
-            # where possible, insert branches into the written patch code
+        427FFC3C 00000150
             5{player_move_hook_addr:07X} {player_move_orig_instr:08X}
                 0{player_move_hook_addr:07X} {player_move_branch_instr:08X}
-            D0000000 00000000
-            
+        D2000000 00000000
+
+        427FFC3C 00000150
             5{save_camera_hook_addr:07X} {save_camera_angle_orig_instr:08X}
                 0{save_camera_hook_addr:07X} {save_camera_angle_branch_instr:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        427FFC3C 00000150
             5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
                 0{camera_turn_hook_addr:07X} {camera_turn_branch_instr:08X}
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

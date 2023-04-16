@@ -169,7 +169,7 @@ def generate_action_replay_code(rom_signature):
             {ar_code__bulk_write(arm7_patch_bytes, arm7_code_start_address)}    # write the Arm7 + Arm11 code
 
             0{vblank_handler_end:07X} {branch_to_rtcom_update_instruction:08X}  # Hook the VBlank IRQ Handler
-        D2000000 00000000
+        D0000000 00000000
     """
 
     ####################################################################################
@@ -204,23 +204,24 @@ def generate_action_replay_code(rom_signature):
         42FFFC3C 00000300
             6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-            D0000000 00000000
+        D2000000 00000000
 
-            # where possible, insert branches into the written patch code
+        # where possible, insert branches into the written patch code
+        42FFFC3C 00000350
             5{player_move_hook_addr:07X} {player_move_orig_instr:08X}
                 0{player_move_hook_addr:07X} {player_move_branch_instr:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        42FFFC3C 00000350
             5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
                 0{camera_turn_hook_addr:07X} {camera_turn_branch_instr:08X}
-            D0000000 00000000
+        D2000000 00000000
 
+        42FFFC3C 00000350
             5{camera_turn_tsc_y_hook_addr:07X} {camera_turn_tsc_y_orig_instr:08X}
                 0{camera_turn_tsc_y_hook_addr:07X} {camera_turn_tsc_y_branch_instr:08X}
                 0{camera_turn_tsc_x_hook_addr:07X} {camera_turn_tsc_x_branch_instr:08X}
-            D0000000 00000000
-        D0000000 00000000
-
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""

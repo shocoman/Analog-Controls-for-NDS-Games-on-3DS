@@ -20,10 +20,10 @@ make_exe_path = "make"
 
 RomInfo = namedtuple(
     'RomInfo',
-    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_code_position, arm9_hook_point, arm9_getangle_func_address, description')
+    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_code_position, vector_length_address, movement_control_hook, description')
 roms_info = {
-    "AJBJ-C3850E69": RomInfo(0x037FE43C, 0x037FE9E1, 0x027F681C, 0x037FBA14, 0x037F83F8, 0x02000A6C, 0x02094FE0, 0x020F538D, "Japan v1.0"),
-    "AJBE-F4DA8487": RomInfo(0x037FE43C, 0x037FE9E1, 0x027F681C, 0x037FBA14, 0x037F83F8, 0x02000A6C, 0x020951DC, 0x020F57AD, "USA v1.0"),
+    "YHNP-C8B7827F": RomInfo(0x037FE3DC, 0x037FE368, 0x027F5CA0, 0x037FB788, 0x037F8414, 0x02000AB0, 0x02002C3C, 0x02029ABA, "Europe v1.0"),
+    "YHNE-E74C30B9": RomInfo(0x037FE3DC, 0x037FE368, 0x027F5CA0, 0x037FB788, 0x037F8414, 0x02000AB0, 0x02002C50, 0x0202891E, "USA v1.0"),
 }
 
 
@@ -100,9 +100,7 @@ def assemble_arm7_rtcom_patch(rom_signature):
 def assemble_arm9_patch(rom_signature, asm_filename):
     rom_info = roms_info[rom_signature]
 
-    arm9_defines_for_assembler = [
-        ("GET_ANGLE_FUNC", rom_info.arm9_getangle_func_address),
-    ]
+    arm9_defines_for_assembler = [("VECTOR_LENGTH_FUNC", rom_info.vector_length_address)]
     asm_defines = sum([["--defsym", f"{name}=0x{value:08X}"] for name, value in arm9_defines_for_assembler], [])
 
     patch_name = asm_filename.upper().split('/')[-1].split('.')[0]
@@ -159,8 +157,7 @@ def generate_action_replay_code(rom_signature):
         # wait until the arm7's code has been fully uploaded
         5{vblank_handler_end:07X} {0xe12fff1e:08X}  # if equal to "bx lr"
 
-            1{rom_info.arm7_rtc_init_function_call:07X} 00000000                # prevent call to init the RTC on Arm7
-            1{rom_info.arm7_rtc_init_function_call+2:07X} 00000000
+            0{rom_info.arm7_rtc_init_function_call:07X} 00000000                # prevent call to init the RTC on Arm7
             {ar_code__bulk_write(arm7_patch_bytes, arm7_code_start_address)}    # write the Arm7 + Arm11 code
 
             0{vblank_handler_end:07X} {branch_to_rtcom_update_instruction:08X}  # Hook the VBlank IRQ Handler
@@ -172,21 +169,24 @@ def generate_action_replay_code(rom_signature):
     arm9_start_address = rom_info.arm9_code_position
     code_binary, code_asm_text = assemble_arm9_patch(rom_signature, "arm9_controls_hook.s")
 
-    # Player Movement
-    hook_addr = rom_info.arm9_hook_point
-    orig_instr = 0x5841
-    branch_instr = instr__thumb_bl(hook_addr, arm9_start_address, True)
+    # Movement
+    movement_hook_addr = rom_info.movement_control_hook
+    movement_orig_instr = 0x6ec0 
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'movement_with_cpad')
+    movement_branch_instr = instr__thumb_bl(movement_hook_addr, arm9_start_address + arm9_offset, True)
 
     ar_code += f"""
         # wait for some time, just to be sure (0x27FFC3C is a frame counter)
-        427FFC3C 00000600
-            # check if we can hook the movement
-            9{hook_addr:07X} {orig_instr:08X}
+        427FFC3C 00000100
+            6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-                1{hook_addr:07X} {branch_instr[0]:08X}
-                1{hook_addr+2:07X} {branch_instr[1]:08X}
-            D0000000 00000000
-        D0000000 00000000
+        D2000000 00000000
+
+        427FFC3C 00000200
+            9{movement_hook_addr:07X} {movement_orig_instr:08X}
+                1{movement_hook_addr+0:07X} {movement_branch_instr[0]:08X}
+                1{movement_hook_addr+2:07X} {movement_branch_instr[1]:08X}
+        D2000000 00000000
     """
 
     formatted_cheatcode = ""
