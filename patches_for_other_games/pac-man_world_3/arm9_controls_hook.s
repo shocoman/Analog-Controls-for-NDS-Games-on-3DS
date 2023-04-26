@@ -16,8 +16,8 @@ move_with_cpad:
 
 move_with_cpad__read_cpad:
     @@ Calculate camera's angle
-    ldr     r0, [sp, #4*10]     @ ForwardVec.X
-    ldr     r1, [sp, #4*10 + 8] @ ForwardVec.Z
+    ldr     r0, [sp, #4*9]     @ ForwardVec.X
+    ldr     r1, [sp, #4*9 + 8] @ ForwardVec.Z
     ldr     r3, get_angle_func
     blx     r3
     mov     r6, r0  @ camera view's angle
@@ -56,8 +56,8 @@ move_with_cpad__read_cpad:
     ldrsh   r1, [r3, r1] @ sin
     
     @@ Write the values (X and Y are flipped)
-    str     r1, [sp, #4*10 + 12]    
-    str     r0, [sp, #4*10 + 12 + 8]
+    str     r1, [sp, #4*9 + 12]    
+    str     r0, [sp, #4*9 + 12 + 8]
 
     pop     {r0-r7, lr}
     
