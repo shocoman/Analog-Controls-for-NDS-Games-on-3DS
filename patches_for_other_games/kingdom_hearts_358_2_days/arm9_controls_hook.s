@@ -68,7 +68,7 @@ TurnCamera_Y:
 
     ldr     r0, RTCom_Output
     ldrsh   r2, [r0, #8] @ CStick Y
-    lsl     r2, #4
+    lsls    r2, #4
 
 @ camera_up:
     addgt   lr, #0x24
@@ -79,9 +79,9 @@ TurnCamera_Y:
     strne   r2, [r6, #0xac] @ set camera speed Y
     movne   r7, #0x10
     movne   r0, #0
-@ turn_camera_X_end:
+@ turn_camera_Y_end:
     pop     {r0-r2}
-    ands    r2, r7, #0x1
+    ands    r2, r7, #0x1 @ replaced opcodes
     bx      lr
 
 
