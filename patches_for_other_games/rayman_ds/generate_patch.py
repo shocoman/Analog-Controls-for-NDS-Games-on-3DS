@@ -24,7 +24,7 @@ make_exe_path = "make"
 RomInfo = namedtuple(
     'RomInfo',
     'arm9_controls_hook_addr, arm7_vblank_irq_end_address, arm7_rtc_region_start, arm7_rtc_init_call_addr, description')
-rom_infos = {
+roms_info = {
     "ARYE-200C3978": RomInfo(0x020769C0, 0x037FBC98, 0x027D5968, 0x037F8408, "USA v1.0"),
     "ARYP-566082C5": RomInfo(0x02076B0C, 0x037FBC98, 0x027D5934, 0x037F8408, "Europe v1.0"),
 }
@@ -39,10 +39,14 @@ def find_function_offset_in_asm_listing(asm_code, func_name):
     return addr
 
 
+arm7_build_cache: dict[tuple[int, ...], tuple[int, bytes]] = dict() # cache to speed up the building of multiple versions
 def assemble_arm7_rtcom_patch(rom_signature):
-    addresses = rom_infos[rom_signature]
-    arm7_patch_dir = 'arm7_rtcom_patch'
+    rom_info = roms_info[rom_signature]
+    cache_key = rom_info[:-1]
+    if cache_key in arm7_build_cache:
+        return arm7_build_cache[cache_key]
 
+    arm7_patch_dir = 'arm7_rtcom_patch'
     # Assemble the TwlBg runtime patch binary
     twlbg_patch_folder = f"{arm7_patch_dir}/arm11_ucode/arm11_twlbg_patch"
     patch_asm_input_file = "arm11_twlbg_patch.s"
@@ -77,7 +81,7 @@ def assemble_arm7_rtcom_patch(rom_signature):
 
     try:
         subprocess.check_output([ld_exe_path, 'rtcom.o', f'{arm7_patch_dir}.uc11.o', '--output', 'arm7_patch.o',
-                                 '--section-start', f'.text={hex(addresses.arm7_rtc_region_start)}'],
+                                 '--section-start', f'.text={hex(rom_info.arm7_rtc_region_start)}'],
                                 stderr=subprocess.DEVNULL, cwd=f'{arm7_patch_dir}/arm7/build/')
     except subprocess.CalledProcessError as e:
         print(e.output.decode('utf-8'))
@@ -93,6 +97,7 @@ def assemble_arm7_rtcom_patch(rom_signature):
                                              cwd=f'{arm7_patch_dir}/arm7/build/', text=True)
     update_rtcom_func_offset = find_function_offset_in_asm_listing(rtcom_asm_code, arm7_update_rtcom_function_name)
 
+    arm7_build_cache[cache_key] = (update_rtcom_func_offset, arm7_patch_bytes)
     return update_rtcom_func_offset, arm7_patch_bytes
 
 
@@ -133,7 +138,7 @@ def generate_action_replay_code(rom_signature):
         branch_instr_2 = 0xE800 | ((offset >> 1) & 0x7FF) | (bits_to_exchange << 11)
         return branch_instr_1, branch_instr_2
 
-    rom_info = rom_infos[rom_signature]
+    rom_info = roms_info[rom_signature]
     ar_code = ""
 
     ####################################################################################
@@ -182,7 +187,7 @@ def generate_action_replay_codes_for_all_rom_versions():
     Path(ac_folder_name).mkdir(exist_ok=True)
 
     cheat_codes = defaultdict(list)
-    for rom_id, addrs in rom_infos.items():
+    for rom_id, addrs in roms_info.items():
         filename = f"{rom_id} ({addrs.description})"
 
         code_text = generate_action_replay_code(rom_id)

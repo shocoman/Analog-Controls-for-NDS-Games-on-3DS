@@ -103,6 +103,7 @@ def assemble_arm9_controls_hook_patch(asm_symbols_params):
     return bytearray(open(assembled_patch_filename, "rb").read()), asm_code
 
 
+arm7_build_cache: dict[tuple[int, bool], tuple[int, bytes]] = dict() # cache to speed up the building of multiple versions
 def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
     def generate_header_file_with_byte_array(patch_path, header_output):
         code_binary = open(patch_path, 'rb').read()
@@ -118,8 +119,10 @@ def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
             twl_bg_header += "};\n "
             twl_bg_header_file.write(twl_bg_header)
 
+    cache_key = (rtc_code_block_start_addr, include_nub)
+    if cache_key in arm7_build_cache:
+        return arm7_build_cache[cache_key]
     arm7_patch_dir = 'arm7_rtcom_patch'
-
     # Assemble the TwlBg runtime patch
     twlbg_patch_dir = f"{arm7_patch_dir}/arm11_ucode/arm11_twlbg_patch"
 
@@ -169,6 +172,7 @@ def assemble_arm7_rtcom_patch(rtc_code_block_start_addr, include_nub):
                                              cwd=f'{arm7_patch_dir}/arm7/build/', text=True)
     update_rtcom_func_offset = find_function_offset_in_asm_listing(rtcom_asm_code, arm7_update_rtcom_function_name)
 
+    arm7_build_cache[cache_key] = (update_rtcom_func_offset, arm7_patch_bytes)
     return update_rtcom_func_offset, arm7_patch_bytes
 
 

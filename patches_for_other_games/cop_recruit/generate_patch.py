@@ -38,10 +38,14 @@ def find_function_offset_in_asm_listing(asm_code, func_name):
     return addr
 
 
+arm7_build_cache: dict[tuple[int, ...], tuple[int, bytes]] = dict() # cache to speed up the building of multiple versions
 def assemble_arm7_rtcom_patch(rom_signature, include_cstick_support):
     rom_info = roms_info[rom_signature]
-    arm7_patch_dir = 'arm7_rtcom_patch'
+    cache_key = (rom_info[:-1], include_cstick_support)
+    if cache_key in arm7_build_cache:
+        return arm7_build_cache[cache_key]
 
+    arm7_patch_dir = 'arm7_rtcom_patch'
     # Assemble the TwlBg runtime patch binary
     twlbg_patch_folder = f"{arm7_patch_dir}/arm11_ucode/arm11_twlbg_patch"
     patch_asm_input_file = "arm11_twlbg_patch.s"
@@ -98,6 +102,7 @@ def assemble_arm7_rtcom_patch(rom_signature, include_cstick_support):
                                              cwd=f'{arm7_patch_dir}/arm7/build/', text=True)
     update_rtcom_func_offset = find_function_offset_in_asm_listing(rtcom_asm_code, arm7_update_rtcom_function_name)
 
+    arm7_build_cache[cache_key] = (update_rtcom_func_offset, arm7_patch_bytes)
     return update_rtcom_func_offset, arm7_patch_bytes
 
 
