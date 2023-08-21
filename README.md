@@ -1,10 +1,12 @@
-### Super Mario 64 DS Circle Pad
+### Analog controls for Super Mario 64 DS and some other DS games on Nintendo 3DS
 
-Here lies an attempt to create a patch that would allow the Circle Pad to be used to control the main character in Super Mario 64 DS when played on a 3DS using TwilightMenu. On New 3DS/New 2DS systems, the patch also makes it possible to rotate the camera left and right using the ZL and ZR buttons, as well as with the nub stick (they just emulate pressing the "<-" and "->" buttons on the touchscreen).
+Here lies an attempt to create a patch that would allow the Circle Pad to be used to control the main character in Super Mario 64 DS (and [a few other games](./patches_for_other_games)) when played on a 3DS using TwilightMenu. On New 3DS/New 2DS systems, the patch also makes it possible to rotate the camera left and right using the ZL and ZR buttons, as well as with the nub stick (they just emulate pressing the "<-" and "->" buttons on the touchscreen).
 
 The patch uses RTCom, a custom protocol that utilizes two free 1-byte legacy RTC registers, to pass data between Arm7 and Arm11 in order to allow the game to use the Circle Pad for controls. It requires TWPatcher with RTCom enabled in order to work. At the time of writing, a detailed description of RTCom by Sono can be found in the comments of [the gbatemp thread](https://gbatemp.net/threads/circle-pad-patches-for-super-mario-64-ds-and-other-games-in-twilightmenu-with-twpatcher-and-rtcom.623267/post-10026852).
 
 It is possible to remap the ZL and ZR buttons to other keys (mostly A, B, X, Y, L, R). So, instead of strictly rotating the camera, they may do something else. The buttons can be remapped similarly through additional AR cheatcodes. I have a simple webpage to generate them [here](https://shocoman.github.io/sm64ds_remap_codegen/).
+
+The original post is on [GBAtemp](https://gbatemp.net/threads/circle-pad-patches-for-super-mario-64-ds-and-other-games-in-twilightmenu-with-twpatcher-and-rtcom.623267/).
 
 ### Action Replay code
 
