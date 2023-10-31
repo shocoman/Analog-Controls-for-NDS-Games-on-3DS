@@ -38,6 +38,10 @@ ProcessCPad:
     @@ Write values
     strh    r0, [r6, #0x2A] @ "touch dx" offset
     strh    r1, [r6, #0x2C] @ "touch dy" offset
+    
+    @ fake a touch to correctly set the player's direction after exiting from the ball form
+    mov     r1, #1
+    strb    r1, [r6, #0x34]
 
     pop     {r0-r6}
     add     lr, #8

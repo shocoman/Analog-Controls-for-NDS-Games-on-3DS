@@ -1,10 +1,11 @@
 
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-@ 020be4e4 00 80 a0 e1      cpy        r8,r0
+@ 020be4e0 | 0c 10 d4 e5 | ldrb r1,[r4,#0xc]
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 .thumb
 SaveCameraAngle:
-    mov     r8, r0 @ the replaced instruction
+    ldrb    r1,[r4,#0xc] @ the replaced instruction
+    
     mov     r2, #0x23
     lsl     r2, #4
     ldr     r3, [r0, r2] @ offset 0x230
@@ -16,8 +17,6 @@ SaveCameraAngle:
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @ 02094f8c ba 05 da e1      ldrh       r0,[r10,#0x5a]
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@    
-@ .align 2
-@ .arm
 MovePlayerWithCPad:
     @ put back the replaced instructions
     mov     r0, r10 @ r10 contains address close to where Link's speed and angle are located

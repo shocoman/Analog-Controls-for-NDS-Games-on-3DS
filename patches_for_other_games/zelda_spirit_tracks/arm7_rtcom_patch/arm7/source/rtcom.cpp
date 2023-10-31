@@ -361,8 +361,9 @@ __attribute__((target("arm"))) void Update_RTCom() {
         break;
     }
     case ToggleDPadEmul: {
-        // if this is the version without the DPad mod, unmap the CPad from the DPad (it's gonna need it)
-        if (*(u32 *)0x02044B04 != 0xe5966dec && *(u32 *)0x02044AD0 != 0xe5966dec) {
+        // if this is a version without the DPad mod, unmap the CPad from the DPad (it's gonna need it)
+        if (*(u32 *)0x02044B04 != 0xe5966dec /*USA v1.0*/ && *(u32 *)0x02044AD0 != 0xE59F6220 /*Europe v1.0*/ 
+            && *(u32 *)0x02044AD0 != 0xe5966dec /*Maybe also Europe v1.0*/) {
             Execute_Code_Async_via_RTCom(6);
         }
         RTCOM_STATE_TIMER += 1;
