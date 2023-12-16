@@ -1,9 +1,12 @@
 #!/bin/python
 from pathlib import Path
+import zlib
+import sys
 import subprocess
 import re
 import struct
 from collections import defaultdict, namedtuple
+
 
 tmp_folder_name = "tmp_ndstools"
 arm7_update_rtcom_function_name = "Update_RTCom"
@@ -17,11 +20,14 @@ make_exe_path = "make"
 
 RomInfo = namedtuple(
     'RomInfo',
-    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_code_position, arm9_barrel_roll_hook, arm9_shooting_keys_addr, arm9_crackers_dpad_hook, arm9_crackers_dpad_hook_return, arm9_crackers_boostbrake_hook, arm9_crackers_boostbrake_hook_return, arm9_crackers_key_mask_addr, description')
+    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_code_position, move_hook, run_hook, camera_turn_with_keys_hook, camera_turn_with_touchscreen_hook, vec3d_length, div32, description')
 roms_info = {
-    "ASFP-F0E8BD5C": RomInfo(0x037FE9EC, 0x037FEAB8, 0x027F6798, 0x037FBAB4, 0x037F84E0, 0x02000000, 0x022113C2, 0x021CCCF0, 0x021E9434, 0x021E943D, 0x021EDBCC, 0x021EDBD5, 0x0203D468, "Europe v1.0"),
-    "ASFJ-70977801": RomInfo(0x037FE9EC, 0x037FEAB8, 0x027F6798, 0x037FBAB4, 0x037F84E0, 0x02000000, 0x022114A6, 0x021CD164, 0x021E9C18, 0x021E9C21, 0x021EE3B0, 0x021EE3B9, 0x0203D414, "Japan v1.0"),
-    "ASFE-F22E6A7D": RomInfo(0x037FE9EC, 0x037FEAB8, 0x027F6798, 0x037FBAB4, 0x037F84E0, 0x02000000, 0x022115BE, 0x021CD250, 0x021E9D34, 0x021E9D3D, 0x021EE4CC, 0x021EE4D5, 0x0203D414, "USA v1.0"),
+    "B5BL-63A4584B": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF27C, 0x020AEE64, 0x020C0360, 0x020B8464, 0x02144AC8, 0x0200E7C8, "Canada (Fr) v1.0"),
+    "B5BX-501269AE": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF294, 0x020AEE7C, 0x020C0378, 0x020B847C, 0x02144AE0, 0x0200E7E0, "Europe (Es,It) v1.0"),
+    "B5BF-EA9A9990": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF27C, 0x020AEE64, 0x020C0360, 0x020B8464, 0x02144AC8, 0x0200E7C8, "France v1.0"),
+    "B5BD-E35C417D": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF27C, 0x020AEE64, 0x020C0360, 0x020B8464, 0x02144AC8, 0x0200E7C8, "Germany v1.0"),
+    "B5BE-E210C974": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF280, 0x020AEE68, 0x020C0364, 0x020B8468, 0x02144ACC, 0x0200E7CC, "USA v1.0"),
+    "B5BP-06F2CFBE": RomInfo(0x037FEBEC, 0x037FEB7C, 0x027E0000, 0x037F8464, 0x037F8324, 0x02003000, 0x020AF280, 0x020AEE68, 0x020C0364, 0x020B8468, 0x02144ACC, 0x0200E7CC, "United Kingdom v1.0"),
 }
 
 
@@ -81,7 +87,7 @@ def assemble_arm7_rtcom_patch(rom_signature):
     try:
         subprocess.check_output([ld_exe_path, 'rtcom.o', f'{arm7_patch_dir}.uc11.o', '--output', 'arm7_patch.o',
                                  '--section-start', f'.text={hex(rom_info.arm7_rtc_region_start)}'],
-                                cwd=f'{arm7_patch_dir}/arm7/build/')
+                                 cwd=f'{arm7_patch_dir}/arm7/build/')
     except subprocess.CalledProcessError as e:
         print(e.output.decode('utf-8'))
         exit(-1)
@@ -104,8 +110,8 @@ def assemble_arm9_patch(rom_signature, asm_filename):
     rom_info = roms_info[rom_signature]
 
     arm9_defines_for_assembler = [
-        ("MOVE_RETURN_ADDR", rom_info.arm9_crackers_dpad_hook_return),
-        ("BOOSTBRAKE_RETURN_ADDR", rom_info.arm9_crackers_boostbrake_hook_return),
+        ("VEC3D_LENGTH_FUNC", rom_info.vec3d_length),
+        ("DIV32_FUNC", rom_info.div32)
     ]
     asm_defines = sum([["--defsym", f"{name}=0x{value:08X}"] for name, value in arm9_defines_for_assembler], [])
 
@@ -148,17 +154,6 @@ def generate_action_replay_code(rom_signature):
         branch_instr_2 = 0xE800 | ((offset >> 1) & 0x7FF) | (bits_to_exchange << 11)
         return branch_instr_1, branch_instr_2
 
-    def instr__thumb_bx__8byte(src, target, ldr_reg_num):
-        ldr_instr = 0x4800 | (ldr_reg_num << 8)
-        bxr_instr = 0x4700 | (ldr_reg_num << 3)
-
-        ac_code = f"1{src:07X} {ldr_instr:08X}\n"
-        ac_code += f"1{src+2:07X} {bxr_instr:08X}\n"
-        ac_code += f"1{src+4:07X} {target & 0xFFFF:08X}\n"
-        ac_code += f"1{src+6:07X} {(target >> 16) & 0xFFFF:08X}\n"
-
-        return ac_code
-
     rom_info = roms_info[rom_signature]
     ar_code = ""
 
@@ -186,50 +181,52 @@ def generate_action_replay_code(rom_signature):
     arm9_start_address = rom_info.arm9_code_position
     code_binary, code_asm_text = assemble_arm9_patch(rom_signature, "arm9_controls_hook.s")
 
-    # Player Movement
-    player_move_hook_addr = rom_info.arm9_crackers_dpad_hook
-    player_move_orig_instr = 0x2298
-    player_move_offset = find_function_offset_in_asm_listing(code_asm_text, 'MovePlayerWithCPad')
+    # Movement
+    dude_move_hook_addr = rom_info.move_hook
+    dude_move_orig_instr = 0xe5860340
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'move_with_cpad')
+    dude_move_branch_instr = instr__arm_b(dude_move_hook_addr, arm9_start_address + arm9_offset, True)
 
-    boostbrake_hook_addr = rom_info.arm9_crackers_boostbrake_hook
-    boostbrake_orig_instr = 0x5c23
-    boostbrake_offset = find_function_offset_in_asm_listing(code_asm_text, 'boostbrake_func')
+    # running with ZR
+    running_hook_addr = rom_info.run_hook
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'run_with_zr')
+    running_branch_instr = instr__arm_b(running_hook_addr, arm9_start_address + arm9_offset, True)
 
-    start_rolling_hook_addr = rom_info.arm9_barrel_roll_hook
-    start_rolling_orig_instr = 0x3041
-    start_rolling_offset = find_function_offset_in_asm_listing(code_asm_text, 'barrel_roll_func')
-    start_rolling_branch_instr = instr__thumb_bl(start_rolling_hook_addr, arm9_start_address+start_rolling_offset, True)
+    # Camera Turning with Buttons
+    camera_turn_hook_addr = rom_info.camera_turn_with_keys_hook
+    camera_turn_orig_instr = 0xe5980000
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'turn_camera_with_keys')
+    camera_turn_branch_instr = instr__arm_b(camera_turn_hook_addr, arm9_start_address + arm9_offset, True)
+
+    # Camera Turning with Touchscreen
+    camera_turn_tsc_hook_addr = rom_info.camera_turn_with_touchscreen_hook
+    camera_turn_tsc_orig_instr = 0xe3510000
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'turn_camera_with_touchscreen')
+    camera_turn_tsc_branch_instr = instr__arm_b(camera_turn_tsc_hook_addr, arm9_start_address + arm9_offset, True)
 
     ar_code += f"""
-        # wait for some time, just to be sure (0x27FFC3C is a frame counter)
-        427FFC3C 00000100
-            52000000 E7FFDEFF
-                {ar_code__bulk_write(code_binary, arm9_start_address)}
+        # wait for some time, just to be sure (0x2FFFC3C is a frame counter)
+        42FFFC3C 00000300
+            6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
+                {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
         D2000000 00000000
 
-        427FFC3C 00000200
-            9{player_move_hook_addr:07X} {player_move_orig_instr:08X}
-                {instr__thumb_bx__8byte(player_move_hook_addr, arm9_start_address+player_move_offset, 2)}
+        # where possible, insert branches into the written patch code
+        42FFFC3C 00000400
+            5{dude_move_hook_addr:07X} {dude_move_orig_instr:08X}
+                0{dude_move_hook_addr:07X} {dude_move_branch_instr:08X}
+                0{running_hook_addr:07X} {running_branch_instr:08X}
         D2000000 00000000
 
-        427FFC3C 00000200
-            9{boostbrake_hook_addr:07X} {boostbrake_orig_instr:08X}
-                {instr__thumb_bx__8byte(boostbrake_hook_addr, arm9_start_address+boostbrake_offset, 3)}
-                2{rom_info.arm9_crackers_key_mask_addr:07X} 0000000C
+        42FFFC3C 00000400
+            5{camera_turn_hook_addr:07X} {camera_turn_orig_instr:08X}
+                0{camera_turn_hook_addr:07X} {camera_turn_branch_instr:08X}
         D2000000 00000000
 
-        427FFC3C 00000200
-            9{start_rolling_hook_addr:07X} {start_rolling_orig_instr:08X}
-                1{start_rolling_hook_addr+0:07X} {start_rolling_branch_instr[0]:08X}
-                1{start_rolling_hook_addr+2:07X} {start_rolling_branch_instr[1]:08X}
+        42FFFC3C 00000400
+            5{camera_turn_tsc_hook_addr:07X} {camera_turn_tsc_orig_instr:08X}
+                0{camera_turn_tsc_hook_addr:07X} {camera_turn_tsc_branch_instr:08X}
         D2000000 00000000
-
-        # disable shooting on X
-        427FFC3C 00000200
-            9{rom_info.arm9_shooting_keys_addr:07X} 00000FF3
-                1{rom_info.arm9_shooting_keys_addr:07X} 00000BF3
-        D2000000 00000000
-
     """
 
     formatted_cheatcode = ""
@@ -282,10 +279,10 @@ def generate_usrcheat_dat_file_with_ar_codes(patches: dict):
 
     def get_ar_code_values_from_text(codes):
         ar_code_values = []
-        for line in codes.splitlines():
+        for i, line in enumerate(codes.splitlines()):
             columns = line.split()
             if len(columns) != 2:
-                continue
+                raise Exception(f"Something is wrong with the cheatcode at line {i+1}! ({columns})")
             ar_code_values.append(int(columns[0], 16))
             ar_code_values.append(int(columns[1], 16))
         return ar_code_values
