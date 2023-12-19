@@ -206,6 +206,12 @@ def generate_action_replay_code(rom_signature):
                 0{movement_b_hook_addr:07X} {movement_b_branch_instr:08X}
         D2000000 00000000
 
+        # allow proper 360 movement (prevent the main character from prioritizing the forward direction)
+        427FFC3C 00000150
+            5{movement_b_hook_addr+0x2A0:07X} a58d009c
+                0{movement_b_hook_addr+0x2A0:07X} 00000000
+        D2000000 00000000
+
     """
 
     formatted_cheatcode = ""

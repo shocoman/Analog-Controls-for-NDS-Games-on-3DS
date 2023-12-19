@@ -127,11 +127,6 @@ barrel_roll_func__start_rolling:
     addge   lr, #0x28
     addlt   lr, #0x4
 
-    @ tst     r7, #0x10
-    @ addne   lr, #0x28
-    @ addeq   lr, #0x4
-
-
 barrel_roll_func__exit:
     pop     {r0-r7}
     bx      lr
