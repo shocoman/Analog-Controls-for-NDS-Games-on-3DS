@@ -8,11 +8,19 @@ BallRolling_Function:
     push    {r0-r6}
     mov     r6, r4
 
+    @ check if we are Samus (and not AI enemy)
+    add     r1, lr, #0x1400
+    ldr     r1, [r1, #0xD8]
+    ldr     r1, [r1]
+    cmp     r1, r5 @ compare Samus character with the current character
+    popne   {r0-r6}
+    movne   r1, r1, lsl #0x1f @ execute the replaced instruction
+    bxne    lr
+
     @ Get the stick value
     ldr     r5, RTComDataOutput
     ldrh    r4, [r5, #0]
-
-    @ if both are zero, exit
+    
     cmp     r4, #0
     popeq   {r0-r6}
     moveq   r1, r1, lsl #0x1f @ execute the replaced instruction
@@ -70,6 +78,18 @@ CameraRotation_Function:
 
     ldrh    r0, [r1, #0xe4] @ execute the replaced instruction
     push    {r0-r7, lr}
+
+    @ check if we are Samus (and not AI enemy) and no cutscene is playing right now
+    add     r1, lr, #0xDE0
+    ldr     r2, [r1]
+    ldr     r2, [r2]
+    cmp     r2, #0
+    bne     CameraRotationExit
+    ldr     r1, [r1, #0x4]
+    ldr     r1, [r1]
+    cmp     r1, r10 @ compare Samus character with the current character
+    bne     CameraRotationExit
+
 
     @ Get the gyroscope values
     ldr     r7, RTComDataOutput
@@ -217,7 +237,7 @@ ToggleVisor_Func: .long TOGGLE_VISOR_FUNC
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @ Jumped here from 0x02024b24 and 0x02024f14 (in USA v1.1)
 @  02024b20 | 6c 13 9a e5 | ldr r1, [r10, #0x36c]
-@ *02024b24 | 00 00 9d e5 | ldr r0, [sp,]
+@ *02024b24 | 00 00 9d e5 | ldr r0, [sp]
 @ ...
 @  02024f10 | 70 13 9a e5 | ldr r1, [r10, #0x370]
 @ *02024f14 | 00 00 9d e5 | ldr r0, [sp]
@@ -231,6 +251,21 @@ PlayerWalk_Function:
     ldrh    r4, [r5, #0]
     cmp     r4, #0
     beq     PlayerWalk_Exit
+
+    @ skip if a cutscene is playing
+    cmp     r0, #0
+    addeq   r2, lr, #0x5D0
+    addne   r2, lr, #0x1E0
+    ldr     r1, [r2]
+    ldr     r1, [r1]
+    cmp     r1, #0
+    bne     PlayerWalk_Exit    
+
+    @ check if we are Samus (and not AI enemy)
+    ldr     r1, [r2, #4]
+    ldr     r1, [r1]
+    cmp     r1, r10 @ compare Samus character with the current character
+    bne     PlayerWalk_Exit
 
     cmp     r0, #0
     bne     MoveVertically

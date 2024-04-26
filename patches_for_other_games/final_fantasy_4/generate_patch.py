@@ -18,11 +18,11 @@ make_exe_path = "make"
 
 RomInfo = namedtuple(
     'RomInfo',
-    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_controls_hook_insertion_point, arm9_code_position, arm9_getangle_func, description')
+    'arm7_ipc_send_msg, arm7_set_ipc_channel_handler, arm7_rtc_region_start, arm7_vblank_irq_end_address, arm7_rtc_init_function_call, arm9_controls_hook_insertion_point, arm9_controls_ship_hook, arm9_controls_ship_set_dir_hook, arm9_code_position, arm9_getangle_func, arm9_is_touchscreen_pressed_func, description')
 roms_info = {
-    "YF4P-D9213F85": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x02116E68, 0x02000A78, 0x02002158, "Europe v1.0"),
-    "YF4J-0F0EE2E8": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x02115880, 0x02000A78, 0x02002158, "Japan v1.0"),
-    "YF4E-99358F97": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x02116C88, 0x02000A78, 0x02002158, "USA v1.0"),
+    "YF4P-D9213F85": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x02116E66, 0x0211FF06, 0x0212017E, 0x02000A78, 0x02002158, 0x0204A2E8, "Europe v1.0"),
+    "YF4J-0F0EE2E8": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x0211587E, 0x0211E7FA, 0x0211EAC4, 0x02000A78, 0x02002158, 0x0204D73C, "Japan v1.0"),
+    "YF4E-99358F97": RomInfo(0x037FEAEC, 0x037FEBB8, 0x027F694C, 0x037FBB94, 0x037F84E0, 0x02116C86, 0x0211FD26, 0x0211FF9E, 0x02000A78, 0x02002158, 0x0204A2E8, "USA v1.0"),
 }
 
 
@@ -105,7 +105,8 @@ def assemble_arm9_patch(rom_signature, asm_filename):
     rom_info = roms_info[rom_signature]
 
     arm9_defines_for_assembler = [
-        ("GET_ANGLE_FUNC", rom_info.arm9_getangle_func)
+        ("GET_ANGLE_FUNC", rom_info.arm9_getangle_func),
+        ("IS_TOUCHSCREEN_PRESSED", rom_info.arm9_is_touchscreen_pressed_func),
         ]
     asm_defines = sum([["--defsym", f"{name}=0x{value:08X}"] for name, value in arm9_defines_for_assembler], [])
 
@@ -177,19 +178,45 @@ def generate_action_replay_code(rom_signature):
 
     # Player Movement
     player_move_hook_addr = rom_info.arm9_controls_hook_insertion_point
-    player_move_orig_instr = 0x0400
-    player_move_branch_instr = instr__thumb_bl(player_move_hook_addr, arm9_start_address, True)
+    player_move_orig_instr = 0x5840
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'move_with_cpad')
+    player_move_branch_instr = instr__thumb_bl(player_move_hook_addr, arm9_start_address + arm9_offset, True)
+    # Vehicle Movement
+    ship_move_hook_addr = rom_info.arm9_controls_ship_hook
+    ship_move_orig_instr = 0x5840
+    ship_move_branch_instr = instr__thumb_bl(ship_move_hook_addr, arm9_start_address + arm9_offset, True)
+    # set ship dir for ship movement
+    ship_set_dir_hook_addr = rom_info.arm9_controls_ship_set_dir_hook
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'ship_set_dir')
+    ship_set_dir_branch_instr = instr__thumb_bl(ship_set_dir_hook_addr, arm9_start_address + arm9_offset, True)
+    # fake touch for ship movement
+    arm9_offset = find_function_offset_in_asm_listing(code_asm_text, 'fake_touchscreen_press')
+    fake_tsc_hook_addr = rom_info.arm9_controls_ship_hook - (0x7E if "japan" in rom_info.description.lower() else 0x80)
+    fake_tsc_branch_instr = instr__thumb_bl(fake_tsc_hook_addr, arm9_start_address + arm9_offset, True)
 
     ar_code += f"""
         # wait for some time, just to be sure (0x27FFC3C is a frame counter)
-        427FFC3C 00000400
-            # check if we can hook the "player movement"
-            9{player_move_hook_addr:07X} {player_move_orig_instr:08X}
+        427FFC3C 00000300
+            6{arm9_start_address:07X} {int.from_bytes(code_binary[:4], 'little'):08X} # only if the patch hasn't been written already
                 {ar_code__bulk_write(code_binary, arm9_start_address)} # main patch
-                
-                1{player_move_hook_addr:07X} {player_move_branch_instr[0]:08X}
+        D2000000 00000000
+
+        427FFC3C 00000400
+            9{player_move_hook_addr:07X} {player_move_orig_instr:08X}
+                1{player_move_hook_addr+0:07X} {player_move_branch_instr[0]:08X}
                 1{player_move_hook_addr+2:07X} {player_move_branch_instr[1]:08X}
         D2000000 00000000
+
+        427FFC3C 00000400
+            9{ship_move_hook_addr:07X} {ship_move_orig_instr:08X}
+                1{fake_tsc_hook_addr+0:07X} {fake_tsc_branch_instr[0]:08X}
+                1{fake_tsc_hook_addr+2:07X} {fake_tsc_branch_instr[1]:08X}
+                1{ship_move_hook_addr+0:07X} {ship_move_branch_instr[0]:08X}
+                1{ship_move_hook_addr+2:07X} {ship_move_branch_instr[1]:08X}
+                1{ship_set_dir_hook_addr+0:07X} {ship_set_dir_branch_instr[0]:08X}
+                1{ship_set_dir_hook_addr+2:07X} {ship_set_dir_branch_instr[1]:08X}
+        D2000000 00000000
+
     """
 
     formatted_cheatcode = ""

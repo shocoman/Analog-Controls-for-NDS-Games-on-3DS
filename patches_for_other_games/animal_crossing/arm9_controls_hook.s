@@ -55,7 +55,7 @@ Read_CPAD:
     @ mulne   r0, r1, r0
     @ asrne   r0, #12
     @ Write the speed
-    mov     r3, #0x130
+    mov     r3, #(0x130 + JAPAN_REGION_OFFSET)
     strh    r0, [r6, r3] @ speed offset
 
     @@ 2) Angle
@@ -64,7 +64,7 @@ Read_CPAD:
     ldr     r3, GetAngle_Func
     blx     r3
     @ Write
-    mov     r3, #0x134
+    mov     r3, #(0x134 + JAPAN_REGION_OFFSET)
     strh    r0, [r6, r3] @ speed offset
 
     pop     {r0-r6,pc}
@@ -80,10 +80,16 @@ RUN_SPEED       = 0x1000
 
 RTCom_Output:       .long 0x027ffdf0
 Walk_Speed:         .short WALK_SPEED
-Run_Btn_Offset:     .short 0x136
+Run_Btn_Offset:     .short (0x136 + JAPAN_REGION_OFFSET)
 
 Sqrt64_Func:        .long SQRT64_FUNC
 Div32_Func:         .long DIV32_FUNC
 GetAngle_Func:      .long GETANGLE_FUNC
 
+
+.if GETANGLE_FUNC == 0x020E7D98 || GETANGLE_FUNC == 0x020E79F8
+    JAPAN_REGION_OFFSET = 4
+.else
+    JAPAN_REGION_OFFSET = 0
+.endif
 
