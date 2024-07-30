@@ -11,6 +11,7 @@ typedef int (*I2C_Write_Func)(void *x, int dev, int dst_addr, const u8 *dst, int
 
 static I2C_Read_Func g_i2c_read_func = nullptr;
 static I2C_Write_Func g_i2c_write_func = nullptr;
+static vu8* g_i2c_device_table = nullptr;
 
 void i2c_init() {
     static const uint8_t i2c_read_pattern[] = {0xff, 0xb5, 0x81, 0xb0, 0x14, 0x46, 0x0d, 0x46,
@@ -30,25 +31,26 @@ void i2c_init() {
         return;
     }
     g_i2c_write_func = (I2C_Write_Func)(ptr | 1);
-}
-
-void nub_init() {
-    if (g_i2c_read_func == nullptr) {
-        return;
-    }
 
     static const uint8_t i2c_senddata_pattern[] = {0x70, 0xb5, 0x06, 0x46, 0x0b, 0x4c, 0x88,
                                                    0x00, 0x0d, 0x18, 0x30, 0x46, 0x61, 0x5d};
-    size_t ptr = (size_t)pat_memesearch(i2c_senddata_pattern, nullptr, RELOC_ADDR, RELOC_SIZE,
+    ptr = (size_t)pat_memesearch(i2c_senddata_pattern, nullptr, RELOC_ADDR, RELOC_SIZE,
                                         sizeof(i2c_senddata_pattern), 2);
     if (!ptr) {
         return;
     }
 
+    g_i2c_device_table = *(vu8 **)(ptr + 0x34);
+}
+
+void nub_init() {
+    if (!g_i2c_read_func || !g_i2c_device_table) {
+        return;
+    }
+
     // add the nub device to the table as the last entry
-    vu8 *i2c_device_table = *(vu8 **)(ptr + 0x34);
-    i2c_device_table[0x46] = 0x2;
-    i2c_device_table[0x47] = 0x54;
+    g_i2c_device_table[0x46] = 0x2;
+    g_i2c_device_table[0x47] = 0x54;
 
     // enable zl-zr buttons
     u8 mode = 0xFC;
@@ -124,59 +126,82 @@ __attribute__((optimize("Ofast"))) void *pat_memesearch(const void *patptr, cons
 // ------------------------------------------------------------------------------------
 // Gyroscope stuff
 
-static int g_gyro_device_num = 0;
+// gotten from https://github.com/hax0kartik/rehid/blob/master/source/Gyroscope.cpp
+struct {
+    u8 sampleratedivider;
+    u8 dlpf;
+    u8 fssel;
+    u8 interruptconfig;
+    u8 gyroxout;
+    u8 powermgm;
+} g_gyro_regs[3] = {
+    // http://problemkaputt.de/gbatek-3ds-i2c-gyroscope-old-version.htm
+    {.sampleratedivider = 0x15, .dlpf = 0x16, .fssel = 0, .interruptconfig = 0x17, .gyroxout = 0x1D, .powermgm = 0x3E},
+    // http://problemkaputt.de/gbatek-3ds-i2c-gyroscope-new-version.htm
+    {.sampleratedivider = 0x19, .dlpf = 0x1A, .fssel = 0x1B, .interruptconfig = 0x38, .gyroxout = 0x43, .powermgm = 0x6B},
+    // ???
+    {.sampleratedivider = 0, .dlpf = 0, .fssel = 0, .interruptconfig = 0, .gyroxout = 0xA8, .powermgm = 0},
+};
 
-int gyro_read(int reg, u8 *dst, int count) {
-    if (!g_i2c_read_func) {
-        return 1;
-    }
+static int g_gyro_variant = 0;
+static int g_gyro_device = 0;
 
-    return !g_i2c_read_func(0, dst, 8 + g_gyro_device_num, reg & 0xFF, count);
+bool gyro_read(int dev, int reg, u8 *dst, int count) {
+    if (!g_i2c_read_func)
+        return false;
+
+    return g_i2c_read_func(0, dst, dev, reg & 0xFF, count);
 }
 
-int gyro_write(int reg, const u8 *dst, int count) {
-    if (!g_i2c_write_func) {
-        return 1;
-    }
+bool gyro_write(int dev, int reg, const u8 *dst, int count) {
+    if (!g_i2c_write_func)
+        return false;
 
-    return !g_i2c_write_func(0, 8 + g_gyro_device_num, reg & 0xFF, dst, count);
+    return g_i2c_write_func(0, dev, reg & 0xFF, dst, count);
 }
 
-int gyro_mask(int reg, u8 mask, u8 val) {
+bool gyro_write_byte(int dev, int reg, u8 value) {
+    u8 data = value;
+    if (!gyro_write(dev, reg, &data, 1))
+        return -2;
+    return 1;
+}
+
+// int gyro_mask(int dev, int reg, u8 mask, u8 val) {
+//     u8 data = 0xA5;
+//     if (!gyro_read(dev, reg, &data, 1))
+//         return -1;
+//     data = (data & ~mask) | val;
+//     if (!gyro_write(dev, reg, &data, 1))
+//         return -2;
+
+//     return 1;
+// }
+
+int gyro_setmask(int dev, int reg, u8 mask) {
     u8 data = 0xA5;
-    if (gyro_read(reg, &data, 1))
-        return 1;
-    data = (data & ~mask) | val;
-    if (gyro_write(reg, &data, 1))
-        return 2;
-
-    return 0;
-}
-
-int gyro_setmask(int reg, u8 mask) {
-    u8 data = 0xA5;
-    if (gyro_read(reg, &data, 1)) {
-        return 1;
+    if (!gyro_read(dev, reg, &data, 1)) {
+        return -1;
     }
     data = data | mask;
-    if (gyro_write(reg, &data, 1)) {
-        return 2;
+    if (!gyro_write(dev, reg, &data, 1)) {
+        return -2;
     }
 
-    return 0;
+    return 1;
 }
 
-int gyro_clrmask(int reg, u8 mask) {
+int gyro_clrmask(int dev, int reg, u8 mask) {
     u8 data = 0xA5;
-    if (gyro_read(reg, &data, 1)) {
-        return 1;
+    if (!gyro_read(dev, reg, &data, 1)) {
+        return -1;
     }
     data = data & ~mask;
-    if (gyro_write(reg, &data, 1)) {
-        return 2;
+    if (!gyro_write(dev, reg, &data, 1)) {
+        return -2;
     }
 
-    return 0;
+    return 1;
 }
 
 static inline void sleepnanos(uint64_t nanos) {
@@ -188,41 +213,108 @@ static inline void sleepnanos(uint64_t nanos) {
                  : "r0", "r1", "r2", "r3");
 }
 
+bool find_and_enable_current_gyro(int &variant, int &device) {
+    if(gyro_clrmask(10, g_gyro_regs[0].powermgm, 64) > 0) {
+        variant = 0;
+        device = 10;
+    } else if (gyro_clrmask(11, g_gyro_regs[1].powermgm, 64) > 0) {
+        variant = 1;
+        device = 11;
+    } else if (gyro_setmask(9, 32, 8) > 0) {
+        variant = 2;
+        device = 9;
+    } else {
+        return false;
+    }
+
+    return true;
+}
+
 int gyro_init() {
-    // will only work with the New3DS family (and maybe old 2DS). Old 3DS has different gyro interface
+    // determine correct gyro variant and device and enable it (exit from sleep mode)
+    int gyro_device, gyro_variant;
+    if (find_and_enable_current_gyro(gyro_variant, gyro_device)) {
+        g_gyro_device = gyro_device;
+        g_gyro_variant = gyro_variant;
+    } else {
+        g_gyro_device = -1;
+        g_gyro_variant = -1;
+        return 0;
+    }
+    sleepnanos(15 * 1000 * 1000);
 
-    g_gyro_device_num = 3; // gyro on New3DS have the id 11
+    // reset gyro
+    if(g_gyro_variant == 2)
+        gyro_setmask(g_gyro_device, 57, 4);
+    else
+        gyro_setmask(g_gyro_device, g_gyro_regs[g_gyro_variant].powermgm, 0x80);
+    sleepnanos(15 * 1000 * 1000);
 
+    // set sampling rate to 98Hz/92Hz
+    if (g_gyro_variant == 2) {
+        gyro_write_byte(g_gyro_device, 36, 0);
+    } else {
+        gyro_write_byte(g_gyro_device, g_gyro_regs[g_gyro_variant].dlpf, 0x1A); // set digital low pass filter
+        if (g_gyro_variant == 1) {
+            sleepnanos(15 * 1000 * 1000);
+            gyro_write_byte(g_gyro_device, g_gyro_regs[g_gyro_variant].fssel, 0x18); // set full scale range
+        }
+    }
+    sleepnanos(15 * 1000 * 1000);
+
+
+    // set sample rate divider (and enable interrupts, probably unnecessary?)
+    if (g_gyro_variant == 2) 
+    {
+        gyro_write_byte(g_gyro_device, 35, 240);
+        sleepnanos(15 * 1000 * 1000);
+        gyro_clrmask(g_gyro_device, 32, 240);
+        sleepnanos(15 * 1000 * 1000);
+        gyro_write_byte(g_gyro_device, 34, 8);
+        sleepnanos(15 * 1000 * 1000);
+        gyro_setmask(g_gyro_device, 57, 32);
+        sleepnanos(15 * 1000 * 1000);
+    }
+    else
+    {
+        gyro_write_byte(g_gyro_device, g_gyro_regs[g_gyro_variant].sampleratedivider, 9); // Set to 100Hz
+        sleepnanos(15 * 1000 * 1000);
+        gyro_write_byte(g_gyro_device, g_gyro_regs[g_gyro_variant].interruptconfig, 1); // Enable Data Ready Interrupt
+        sleepnanos(15 * 1000 * 1000);
+    }
+    
+
+    // Old Gyro-11 init code
     // turn off sleep mode
-    gyro_clrmask(0x6B, 0x40);
-    sleepnanos(10000000);
+    // gyro_clrmask(g_gyro_device, 0x6B, 0x40);
+    // sleepnanos(10000000);
 
-    // gyro X PLL clocksource
-    gyro_mask(0x6B, 0x07, 0x01);
-    sleepnanos(10000000);
+    // // gyro X PLL clocksource
+    // gyro_mask(0x6B, 0x07, 0x01);
+    // sleepnanos(10000000);
 
-    // Low Pass Filter = ~42Hz
-    gyro_mask(0x1A, 0x07, 0x03);
-    sleepnanos(15000000);
+    // // Low Pass Filter = ~42Hz
+    // gyro_mask(0x1A, 0x07, 0x03);
+    // sleepnanos(15000000);
 
-    // Samplerate = 1kHz / (val + 1)
-    u8 val = 4;
-    gyro_write(0x19, &val, 1);
-    sleepnanos(10000000);
+    // // Samplerate = 1kHz / (val + 1)
+    // u8 val = 4;
+    // gyro_write(0x19, &val, 1);
+    // sleepnanos(10000000);
 
-    // ~250deg / s range, 0x10000 == 250deg of rotation
-    gyro_mask(0x1B, 0x18, 0x00);
-    sleepnanos(10000000);
+    // // ~250deg / s range, 0x10000 == 250deg of rotation
+    // gyro_mask(0x1B, 0x18, 0x00);
+    // sleepnanos(10000000);
 
-    // 2g force, 0x10000 == 2g of force
-    gyro_mask(0x1C, 0x18, 0x00);
-    sleepnanos(10000000);
+    // // 2g force, 0x10000 == 2g of force
+    // gyro_mask(0x1C, 0x18, 0x00);
+    // sleepnanos(10000000);
 
     // turn off sleep mode again (bug?)
-    gyro_clrmask(0x6B, 0x40);
-    sleepnanos(10000000);
+    // gyro_clrmask(0x6B, 0x40);
+    // sleepnanos(10000000);
 
-    return g_gyro_device_num;
+    return g_gyro_device;
 }
 
 // ------------------------------------------------------------------------------------
@@ -302,8 +394,10 @@ void patch_twlbg(vu8 stage) {
         for (u32 i = 0; i < patch_code_size; i++) {
             *(vu8 *)(main_patch_start + i) = twlbg_patch_code[i];
         }
-        *(u32 *)(main_patch_start + patch_code_size - 8) = (u32)g_cpad_addr;
-        *(u32 *)(main_patch_start + patch_code_size - 4) = (u32)g_i2c_read_func | 1;
+        *(u32 *)(main_patch_start + patch_code_size - 12) = (u32)g_cpad_addr;
+        *(u32 *)(main_patch_start + patch_code_size - 8) = (u32)g_i2c_read_func | 1;
+
+        *(u32 *)(main_patch_start + patch_code_size - 4) = (u32)((g_gyro_device << 8) | g_gyro_regs[g_gyro_variant].gyroxout);
         flush_cache(main_patch_start - 2, patch_code_size + 4);
 
         // for now, skip the area we're going to insert the branch into
@@ -320,7 +414,7 @@ void patch_twlbg(vu8 stage) {
         *(vu16 *)(branch_base_address + 2) = branch_instr_2;
         flush_cache((u8 *)branch_base_address, 4);
     } else if (stage == 3) {
-         // remove previously inserted skip-branch
+        // remove previously inserted skip-branch
         *(vu16 *)g_rtc_func_addr = 0x2500; // movs r5,#0x0
         flush_cache((u8 *)g_rtc_func_addr, 2);
     }

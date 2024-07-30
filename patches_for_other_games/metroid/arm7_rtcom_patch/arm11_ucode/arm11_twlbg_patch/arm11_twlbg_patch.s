@@ -30,19 +30,29 @@ I2C_Read_ZL_ZR_and_Nub:
 
 WriteDataIntoRtcRegs:
     ldr r4, LegacyRtcRegs_Address
+    ldr     r3, current_gyro_reg_out_and_dev_id
+    lsr     r2, r3, #8    @ gyro device id
+    uxtb    r3, r3        @ gyro output register
 
-    ldr r2, CPAD_Address
-    ldrb r0, [r2, #0x0] @ CPad X
-    ldrb r1, [r2, #0x2] @ CPad Y
+    ldr r1, CPAD_Address
+    ldrb r0, [r1, #0x0] @ CPad X
+    ldrb r1, [r1, #0x2] @ CPad Y
     lsl r1, #8
     orr r0, r1
     lsl r0, #8
     str r0, [r4, #0x34] @ RTC ALRMTIM2 (CPadX => Hour, CPadY => DoW)
 
     @@@ START: Saving ZL&ZR&Nub data
-    mov r2, sp
-    ldrb r1, [r2, #0x5] @ Nub "mode" and ZL/ZR buttons: [_, _, _, ZL&ZR (ZL=3rd bit, ZR=2nd bit)]
-    ldr r0, [r2, #0x8]  @ Load Nub positions: [?, NubY, NubX, ?]
+    mov r0, sp
+    ldrb r1, [r0, #0x5] @ Nub "mode" and ZL/ZR buttons: [_, _, _, ZL&ZR (ZL=3rd bit, ZR=2nd bit)]
+
+    @ include gyro version (for arm7 to know how to process the result)
+    mov r5, #0x0F
+    and r1, r5
+    lsl r5, r2, #4
+    orr r1, r5
+
+    ldr r0, [r0, #0x8]  @ Load Nub positions: [?, NubY, NubX, ?]
     lsr r0, #8          @ [_, ?, NubY, NubX]
     lsl r0, #8          @ [?, NubY, NubX, _]
     orr r0, r1          @ [?, NubY, NubX, ZL&ZR]
@@ -56,11 +66,11 @@ I2C_ReadGyro:
     mov r5, sp
     mov r1, sp
 
-    mov r2, #0x6
-    push {r2}
+    mov r0, #0x6 @ read buffer length
+    push {r0}
     
-    mov r3, #0x43
-    mov r2, #0xb
+    @ mov r3, #0x43 @ output register
+    @ mov r2, #0xb  @ device id
     ldr r0, I2cRead_FuncAddress
     blx r0
     @@@ END: Getting Gyroscope X & Y data
@@ -72,8 +82,7 @@ I2C_ReadGyro:
     ldrh r1, [r5, #4]
     lsl r1, #8
     orr r0, r1
-    mov r2, #0x64
-    str r0, [r4, r2] @ RTC ALRMDAT2
+    str r0, [r4, #0x64] @ RTC ALRMDAT2
 
     @@ Update Rtc on the NDS side
     movs r0, #0x33 @ ALRMDAT2, ALRMDAT1, COUNT, ALRMTIM2
@@ -93,3 +102,5 @@ LegacyRtcRegs_Address:  .long 0x1EC47100
 
 CPAD_Address:           .long 0x0 @ filled at runtime
 I2cRead_FuncAddress:    .long 0x0 @ filled at runtime
+
+current_gyro_reg_out_and_dev_id:   .long 0x0 @ filled at runtime

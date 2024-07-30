@@ -284,6 +284,7 @@ static void Update_CPad_etc() {
     readCmd = RTC_READ_COUNTER_EXT;
     rtcTransferReversed(&readCmd, 1, readVal, 3, true);
 
+    u8 gyro_version = (readVal[2] & 0xF0) >> 4;
     u8 zlzr = (readVal[2] & 0b110); // zl-zr (2nd,3rd bits)
     // adjust the nub data by rotating it 45 degrees CCW
     // new_x = x * cos45 - y * sin45 = x * sin45 - y * sin45 = sin45*(x-y)
@@ -292,6 +293,11 @@ static void Update_CPad_etc() {
     s32 sin_45 = 0xB50; // sqrt(2)/2 in fixed-point notation
     s32 rot_nub_x = (sin_45 * (nub_x - nub_y) + 0x800) >> 12;
     s32 rot_nub_y = (sin_45 * (nub_x + nub_y) + 0x800) >> 12;
+
+    // add small threshold in case of stick drift
+    if (-3 <= rot_nub_x && rot_nub_x <= 3) rot_nub_x = 0;
+    if (-3 <= rot_nub_y && rot_nub_y <= 3) rot_nub_y = 0;
+
     *(vu8 *)(RTCOM_DATA_OUTPUT + 4) = zlzr;
     *(vu16 *)(RTCOM_DATA_OUTPUT + 6) = (s16)rot_nub_x;
     *(vu16 *)(RTCOM_DATA_OUTPUT + 8) = (s16)rot_nub_y;
@@ -302,9 +308,24 @@ static void Update_CPad_etc() {
     readCmd = RTC_READ_ALARM_DATE_2_EXT;
     rtcTransferReversed(&readCmd, 1, readVal + 3, 3, true);
 
-    *(vu16 *)(RTCOM_DATA_OUTPUT + 10) = readVal[1] | (readVal[2] << 8);
-    *(vu16 *)(RTCOM_DATA_OUTPUT + 12) = readVal[5] | (readVal[0] << 8);
-    *(vu16 *)(RTCOM_DATA_OUTPUT + 14) = readVal[3] | (readVal[4] << 8);
+
+    u8 gyro[6] = {
+        readVal[2], readVal[1],
+        readVal[0], readVal[5],
+        readVal[4], readVal[3]
+    };
+
+    if (gyro_version == 9) {
+        // 3rd gyro variant (swap X and Y, and invert Y)
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 10) = ((gyro[2] << 8) | gyro[3]) << 3;
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 12) = (-((gyro[0] << 8) | gyro[1])) << 3;
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 14) = ((gyro[4] << 8) | gyro[5]) << 3;
+    } else {
+        // Normal
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 10) = ((gyro[0] << 8) | gyro[1]) << 3;
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 12) = ((gyro[2] << 8) | gyro[3]) << 3;
+        *(vu16 *)(RTCOM_DATA_OUTPUT + 14) = ((gyro[4] << 8) | gyro[5]) << 3;
+    }
 }
 
 __attribute__((target("arm"))) void RtcChannelHandler(int n_service, int arg, int no_handle) {
@@ -352,9 +373,9 @@ __attribute__((target("arm"))) void Update_RTCom() {
         break;
     }
     case Start:
-#ifdef ARM7_IPC_CHANNEL_HANDLER
-        ((Set_IPC_Channel_Handler)ARM7_IPC_CHANNEL_HANDLER)(5, (void *)RtcChannelHandler);
-#endif
+        #ifdef ARM7_IPC_CHANNEL_HANDLER
+            ((Set_IPC_Channel_Handler)ARM7_IPC_CHANNEL_HANDLER)(5, (void *)RtcChannelHandler);
+        #endif
         RTCOM_STATE_TIMER += 1;
         break;
     case UploadCode:
